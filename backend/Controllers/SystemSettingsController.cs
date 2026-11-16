@@ -1,7 +1,7 @@
+using System.Data;
+using System.Data.SqlClient;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using backend.Data;
-using backend.Models;
+using backend.HelperClasses;
 
 namespace backend.Controllers;
 
@@ -9,17 +9,33 @@ namespace backend.Controllers;
 [Route("api/[controller]")]
 public class SystemSettingsController : ControllerBase
 {
-    private readonly AppDbContext _context;
+    private readonly DBAccess _dba;
 
-    public SystemSettingsController(AppDbContext context)
+    public SystemSettingsController(DBAccess dba)
     {
-        _context = context;
+        _dba = dba;
     }
 
     [HttpGet]
     public async Task<IActionResult> GetSettings()
     {
-        var settings = await _context.SystemSettings.OrderBy(s => s.Category).ThenBy(s => s.SettingKey).ToListAsync();
+        var dt = await _dba.GetDataAsync("[dbo].[Get_System_Settings]");
+        var settings = new List<object>();
+
+        foreach (DataRow row in dt.Rows)
+        {
+            settings.Add(new
+            {
+                id = Convert.ToInt32(row["Id"]),
+                category = row["Category"]?.ToString(),
+                settingKey = row["SettingKey"]?.ToString(),
+                settingValue = row["SettingValue"]?.ToString(),
+                description = row["Description"]?.ToString(),
+                updatedAt = row["UpdatedAt"] != DBNull.Value ? Convert.ToDateTime(row["UpdatedAt"]) : (DateTime?)null,
+                updatedBy = row["UpdatedBy"]?.ToString()
+            });
+        }
+
         return Ok(settings);
     }
 
@@ -32,30 +48,27 @@ public class SystemSettingsController : ControllerBase
     [HttpPut]
     public async Task<IActionResult> UpdateSettings([FromBody] List<UpdateSettingDto> updates)
     {
+        if (updates == null || updates.Count == 0)
+        {
+            return BadRequest(new { message = "No settings provided for update." });
+        }
+
         var operatorUser = Request.Headers["X-UserName"].FirstOrDefault() ?? "Admin";
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
 
         foreach (var item in updates)
         {
-            var setting = await _context.SystemSettings.FindAsync(item.Id);
-            if (setting != null)
+            var spParams = new[]
             {
-                var oldVal = setting.SettingValue;
-                setting.SettingValue = item.SettingValue;
-                setting.UpdatedAt = DateTime.UtcNow;
-                setting.UpdatedBy = operatorUser;
+                new SqlParameter("@Id", SqlDbType.Int) { Value = item.Id },
+                new SqlParameter("@SettingValue", SqlDbType.NVarChar, 500) { Value = item.SettingValue ?? "" },
+                new SqlParameter("@Operator", SqlDbType.NVarChar, 100) { Value = operatorUser },
+                new SqlParameter("@IPAddress", SqlDbType.VarChar, 50) { Value = ipAddress }
+            };
 
-                _context.AuditTrails.Add(new AuditTrail
-                {
-                    UserName = operatorUser,
-                    Action = "UPDATE_SETTING",
-                    Module = "SETTINGS",
-                    Details = $"{setting.Category}.{setting.SettingKey}: '{oldVal}' -> '{item.SettingValue}'",
-                    IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString()
-                });
-            }
+            await _dba.ExecuteCommandAsync("[dbo].[Update_System_Setting]", spParams);
         }
 
-        await _context.SaveChangesAsync();
         return Ok(new { success = true, message = "Settings updated successfully." });
     }
 }

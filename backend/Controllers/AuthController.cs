@@ -1,7 +1,6 @@
+using System.Data;
+using System.Data.SqlClient;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using backend.Data;
-using backend.Models;
 using backend.HelperClasses;
 
 namespace backend.Controllers;
@@ -10,11 +9,11 @@ namespace backend.Controllers;
 [Route("api/[controller]")]
 public class AuthController : ControllerBase
 {
-    private readonly AppDbContext _context;
+    private readonly DBAccess _dba;
 
-    public AuthController(AppDbContext context)
+    public AuthController(DBAccess dba)
     {
-        _context = context;
+        _dba = dba;
     }
 
     public class LoginRequest
@@ -23,6 +22,11 @@ public class AuthController : ControllerBase
         public string Password { get; set; } = string.Empty;
     }
 
+    /// <summary>
+    /// POST api/Auth/login
+    /// Calls [dbo].[getUserLoginDetails], validates Argon2/BCrypt hash,
+    /// calls [dbo].[RegisterFailedLoginAttempt] or [dbo].[RegisterSuccessfulLogin].
+    /// </summary>
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
@@ -32,65 +36,77 @@ public class AuthController : ControllerBase
         }
 
         var userName = request.Username.Trim();
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.UserName == userName);
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
 
-        if (user == null)
+        // 1. Call Stored Procedure [dbo].[getUserLoginDetails]
+        var spParams = new[]
+        {
+            new SqlParameter("@UserName", SqlDbType.NVarChar, 100) { Value = userName }
+        };
+
+        var dt = await _dba.GetDataAsync("[dbo].[getUserLoginDetails]", spParams);
+
+        if (dt == null || dt.Rows.Count == 0)
         {
             return Unauthorized(new { message = "Invalid Username or Password." });
         }
 
-        if (user.IsLockedOut || user.IsLockedPermanently)
+        var row = dt.Rows[0];
+        var isLockedOut = row["IsLockedOut"] != DBNull.Value && Convert.ToBoolean(row["IsLockedOut"]);
+        var isLockedPermanently = row["IsLockedPermanently"] != DBNull.Value && Convert.ToBoolean(row["IsLockedPermanently"]);
+        var loginMessage = row["LoginMessage"]?.ToString();
+        var storedHash = row["PasswordHash"]?.ToString();
+        var isActive = row["IsActive"] == DBNull.Value || Convert.ToBoolean(row["IsActive"]);
+
+        if (isLockedOut || isLockedPermanently)
         {
-            return Unauthorized(new { message = user.LoginMessage ?? "Account is locked. Please contact administrator." });
+            return Unauthorized(new { message = !string.IsNullOrWhiteSpace(loginMessage) ? loginMessage : "Account is locked. Please contact administrator." });
         }
 
-        if (!user.IsActive)
+        if (!isActive)
         {
             return Unauthorized(new { message = "Account is inactive. Please contact administrator." });
         }
 
-        var isValidPassword = CryptoHelper.PasswordVerify(request.Password, user.PasswordHash, 3);
+        // 2. Validate Password via Argon2id / BCrypt
+        var isValid = CryptoHelper.PasswordVerify(request.Password, storedHash ?? "", 3);
 
-        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
-
-        if (!isValidPassword)
+        if (!isValid)
         {
-            user.FailedLoginAttemptCount += 1;
-            user.LastFailedLoginDate = DateTime.UtcNow;
-
-            if (user.FailedLoginAttemptCount >= 5)
+            // Call Stored Procedure [dbo].[RegisterFailedLoginAttempt]
+            var failParams = new[]
             {
-                user.IsLockedOut = true;
-                user.LoginMessage = "Account locked due to 5 consecutive failed login attempts.";
-            }
+                new SqlParameter("@UserName", SqlDbType.NVarChar, 100) { Value = userName },
+                new SqlParameter("@MaxFailedAttempts", SqlDbType.Int) { Value = 5 },
+                new SqlParameter("@IPAddress", SqlDbType.VarChar, 50) { Value = ipAddress }
+            };
+            await _dba.ExecuteCommandAsync("[dbo].[RegisterFailedLoginAttempt]", failParams);
 
-            _context.AuditTrails.Add(new AuditTrail
+            // Re-check lockout status
+            var checkDt = await _dba.GetDataAsync("[dbo].[getUserLoginDetails]", spParams);
+            var isNowLocked = checkDt.Rows.Count > 0 && checkDt.Rows[0]["IsLockedOut"] != DBNull.Value && Convert.ToBoolean(checkDt.Rows[0]["IsLockedOut"]);
+
+            return Unauthorized(new
             {
-                UserName = userName,
-                Action = "LOGIN_FAILED",
-                Module = "AUTH",
-                Details = $"Failed attempt #{user.FailedLoginAttemptCount}",
-                IpAddress = ipAddress
+                message = isNowLocked
+                    ? "Account locked due to 5 consecutive failed login attempts."
+                    : "Invalid Username or Password."
             });
-
-            await _context.SaveChangesAsync();
-            return Unauthorized(new { message = user.IsLockedOut ? user.LoginMessage : "Invalid Username or Password." });
         }
 
-        // Login success: reset failure counter
-        user.FailedLoginAttemptCount = 0;
-        user.LastLoginDate = DateTime.UtcNow;
-
-        _context.AuditTrails.Add(new AuditTrail
+        // 3. Password valid: Call Stored Procedure [dbo].[RegisterSuccessfulLogin]
+        var successParams = new[]
         {
-            UserName = userName,
-            Action = "LOGIN_SUCCESS",
-            Module = "AUTH",
-            Details = $"Logged in successfully. Role: {user.RoleName}",
-            IpAddress = ipAddress
-        });
+            new SqlParameter("@UserName", SqlDbType.NVarChar, 100) { Value = userName },
+            new SqlParameter("@IPAddress", SqlDbType.VarChar, 50) { Value = ipAddress }
+        };
+        await _dba.ExecuteCommandAsync("[dbo].[RegisterSuccessfulLogin]", successParams);
 
-        await _context.SaveChangesAsync();
+        var loginID = row["LoginID"]?.ToString() ?? "";
+        var fullName = row["FullName"]?.ToString() ?? userName;
+        var displayName = row["DisplayName"]?.ToString() ?? fullName;
+        var email = row["Email"]?.ToString() ?? "";
+        var roleName = row["RoleName"]?.ToString() ?? "User";
 
         return Ok(new
         {
@@ -99,16 +115,15 @@ public class AuthController : ControllerBase
             {
                 new
                 {
-                    loginID = user.LoginID,
-                    UserName = user.UserName,
-                    FullName = user.FullName,
-                    DisplayName = user.DisplayName ?? user.FullName,
-                    Email = user.Email,
-                    RoleName = user.RoleName,
-                    IsLockedOut = user.IsLockedOut,
-                    IsLockedPermanently = user.IsLockedPermanently,
-                    LoginMessage = user.LoginMessage,
-                    LastLoginDate = user.LastLoginDate
+                    loginID,
+                    userName,
+                    fullName,
+                    displayName,
+                    email,
+                    roleName,
+                    isLockedOut = false,
+                    isLockedPermanently = false,
+                    lastLoginDate = DateTime.UtcNow
                 }
             }
         });
@@ -118,49 +133,71 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> Logout()
     {
         var userName = Request.Headers["X-UserName"].FirstOrDefault() ?? "Unknown";
-        _context.AuditTrails.Add(new AuditTrail
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+
+        var spParams = new[]
         {
-            UserName = userName,
-            Action = "LOGOUT",
-            Module = "AUTH",
-            Details = "User logged out.",
-            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString()
-        });
-        await _context.SaveChangesAsync();
+            new SqlParameter("@UserName", SqlDbType.NVarChar, 100) { Value = userName },
+            new SqlParameter("@Action", SqlDbType.NVarChar, 100) { Value = "LOGOUT" },
+            new SqlParameter("@Module", SqlDbType.NVarChar, 100) { Value = "AUTH" },
+            new SqlParameter("@Details", SqlDbType.NVarChar) { Value = "User logged out." },
+            new SqlParameter("@IPAddress", SqlDbType.VarChar, 50) { Value = ipAddress }
+        };
+
+        try
+        {
+            await _dba.ExecuteCommandAsync("[dbo].[Log_Audit_Trail]", spParams);
+        }
+        catch
+        {
+            // fallback
+        }
+
         return Ok(new { success = true });
     }
 
+    [HttpGet("isAuthenticated")]
     [HttpPost("isAuthenticated")]
     public IActionResult IsAuthenticated()
     {
-        var userHeader = Request.Headers["X-UserName"].FirstOrDefault();
-        if (string.IsNullOrWhiteSpace(userHeader))
-        {
-            return Ok(new { authenticated = true });
-        }
-        return Ok(new { authenticated = true, user = userHeader });
+        return Ok(new { authenticated = true });
     }
 
     public class MenuRequest
     {
         public string? MenuId { get; set; }
+        public string? LoginID { get; set; }
     }
 
+    /// <summary>
+    /// POST api/Auth/GetMenuID
+    /// Calls [dbo].[GetMenuID] stored procedure
+    /// </summary>
     [HttpPost("GetMenuID")]
-    public IActionResult GetMenuID([FromBody] MenuRequest? request)
+    public async Task<IActionResult> GetMenuID([FromBody] MenuRequest? request)
     {
-        // Standard administration & application menus matching My HR structure
-        var menuItems = new[]
+        var userName = Request.Headers["X-UserName"].FirstOrDefault() ?? request?.LoginID;
+        var spParams = new[]
         {
-            new { FunctionID = 1001, FunctionName = "Dashboard", NavigationURL = "/main", DisplayOrder = 1, Module = "Overview" },
-            new { FunctionID = 1002, FunctionName = "Users", NavigationURL = "/main/users", DisplayOrder = 2, Module = "Administration" },
-            new { FunctionID = 1008, FunctionName = "User Roles", NavigationURL = "/main/admin/roles", DisplayOrder = 3, Module = "Administration" },
-            new { FunctionID = 1005, FunctionName = "Assign Roles", NavigationURL = "/main/admin/assign-roles", DisplayOrder = 4, Module = "Administration" },
-            new { FunctionID = 2001, FunctionName = "Audit Trail", NavigationURL = "/main/audit", DisplayOrder = 5, Module = "Administration" },
-            new { FunctionID = 3001, FunctionName = "Settings", NavigationURL = "/main/settings", DisplayOrder = 6, Module = "Administration" },
-            new { FunctionID = 8001, FunctionName = "Invoices", NavigationURL = "/main/invoices", DisplayOrder = 7, Module = "Billing" },
+            new SqlParameter("@LoginID", SqlDbType.NVarChar, 100) { Value = (object?)userName ?? DBNull.Value },
+            new SqlParameter("@MenuID", SqlDbType.Int) { Value = 0 }
         };
 
-        return Ok(menuItems);
+        var dt = await _dba.GetDataAsync("[dbo].[GetMenuID]", spParams);
+        var menuList = new List<object>();
+
+        foreach (DataRow row in dt.Rows)
+        {
+            menuList.Add(new
+            {
+                functionID = Convert.ToInt32(row["FunctionID"]),
+                functionName = row["FunctionName"]?.ToString() ?? "",
+                navigationURL = row["NavigationURL"]?.ToString() ?? "",
+                displayOrder = Convert.ToInt32(row["DisplayOrder"]),
+                module = row["Module"]?.ToString() ?? "Administration"
+            });
+        }
+
+        return Ok(menuList);
     }
 }

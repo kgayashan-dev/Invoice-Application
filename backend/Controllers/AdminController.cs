@@ -1,7 +1,6 @@
+using System.Data;
+using System.Data.SqlClient;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using backend.Data;
-using backend.Models;
 using backend.HelperClasses;
 
 namespace backend.Controllers;
@@ -10,35 +9,38 @@ namespace backend.Controllers;
 [Route("api/[controller]")]
 public class AdminController : ControllerBase
 {
-    private readonly AppDbContext _context;
+    private readonly DBAccess _dba;
 
-    public AdminController(AppDbContext context)
+    public AdminController(DBAccess dba)
     {
-        _context = context;
+        _dba = dba;
     }
 
     [HttpGet("users")]
     public async Task<IActionResult> GetUsers()
     {
-        var users = await _context.Users
-            .OrderByDescending(u => u.CreatedAt)
-            .Select(u => new
+        var dt = await _dba.GetDataAsync("[dbo].[Get_All_Users]");
+        var users = new List<object>();
+
+        foreach (DataRow row in dt.Rows)
+        {
+            users.Add(new
             {
-                u.LoginID,
-                u.UserName,
-                u.FullName,
-                u.DisplayName,
-                u.Email,
-                u.ContactNumber,
-                u.NIC,
-                u.RoleName,
-                u.IsLockedOut,
-                u.IsLockedPermanently,
-                u.IsActive,
-                u.CreatedAt,
-                u.LastLoginDate
-            })
-            .ToListAsync();
+                loginID = row["LoginID"]?.ToString(),
+                userName = row["UserName"]?.ToString(),
+                fullName = row["FullName"]?.ToString(),
+                displayName = row["DisplayName"]?.ToString(),
+                email = row["Email"]?.ToString(),
+                contactNumber = row["ContactNumber"]?.ToString(),
+                nic = row["NIC"]?.ToString(),
+                roleName = row["RoleName"]?.ToString(),
+                isLockedOut = row["IsLockedOut"] != DBNull.Value && Convert.ToBoolean(row["IsLockedOut"]),
+                isLockedPermanently = row["IsLockedPermanently"] != DBNull.Value && Convert.ToBoolean(row["IsLockedPermanently"]),
+                isActive = row["IsActive"] == DBNull.Value || Convert.ToBoolean(row["IsActive"]),
+                createdAt = row["CreatedAt"] != DBNull.Value ? Convert.ToDateTime(row["CreatedAt"]) : (DateTime?)null,
+                lastLoginDate = row["LastLoginDate"] != DBNull.Value ? Convert.ToDateTime(row["LastLoginDate"]) : (DateTime?)null
+            });
+        }
 
         return Ok(users);
     }
@@ -46,9 +48,32 @@ public class AdminController : ControllerBase
     [HttpGet("users/{id}")]
     public async Task<IActionResult> GetUser(string id)
     {
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.LoginID == id);
-        if (user == null)
+        var spParams = new[]
+        {
+            new SqlParameter("@LoginID", SqlDbType.NVarChar, 50) { Value = id }
+        };
+
+        var dt = await _dba.GetDataAsync("[dbo].[Get_User_By_Id]", spParams);
+        if (dt == null || dt.Rows.Count == 0)
             return NotFound(new { message = "User not found." });
+
+        var row = dt.Rows[0];
+        var user = new
+        {
+            loginID = row["LoginID"]?.ToString(),
+            userName = row["UserName"]?.ToString(),
+            fullName = row["FullName"]?.ToString(),
+            displayName = row["DisplayName"]?.ToString(),
+            email = row["Email"]?.ToString(),
+            contactNumber = row["ContactNumber"]?.ToString(),
+            nic = row["NIC"]?.ToString(),
+            roleName = row["RoleName"]?.ToString(),
+            isLockedOut = row["IsLockedOut"] != DBNull.Value && Convert.ToBoolean(row["IsLockedOut"]),
+            isLockedPermanently = row["IsLockedPermanently"] != DBNull.Value && Convert.ToBoolean(row["IsLockedPermanently"]),
+            isActive = row["IsActive"] == DBNull.Value || Convert.ToBoolean(row["IsActive"]),
+            createdAt = row["CreatedAt"] != DBNull.Value ? Convert.ToDateTime(row["CreatedAt"]) : (DateTime?)null,
+            lastLoginDate = row["LastLoginDate"] != DBNull.Value ? Convert.ToDateTime(row["LastLoginDate"]) : (DateTime?)null
+        };
 
         return Ok(user);
     }
@@ -75,74 +100,51 @@ public class AdminController : ControllerBase
             return BadRequest(new { message = "UserName is required." });
 
         var operatorUser = Request.Headers["X-UserName"].FirstOrDefault() ?? "Admin";
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
 
-        if (dto.Action.Equals("I", StringComparison.OrdinalIgnoreCase))
+        string? passwordHash = null;
+        if (!string.IsNullOrWhiteSpace(dto.Password))
         {
-            if (string.IsNullOrWhiteSpace(dto.Password))
-                return BadRequest(new { message = "Password is required for new user." });
-
-            var existing = await _context.Users.AnyAsync(u => u.UserName == dto.UserName.Trim());
-            if (existing)
-                return BadRequest(new { message = $"Username '{dto.UserName}' already exists." });
-
-            var newUser = new User
-            {
-                LoginID = Guid.NewGuid().ToString().ToUpper(),
-                UserName = dto.UserName.Trim(),
-                FullName = dto.FullName.Trim(),
-                DisplayName = dto.DisplayName ?? dto.FullName.Trim(),
-                Email = dto.Email?.Trim(),
-                ContactNumber = dto.ContactNumber?.Trim(),
-                NIC = dto.NIC?.Trim(),
-                RoleName = string.IsNullOrWhiteSpace(dto.RoleName) ? "User" : dto.RoleName.Trim(),
-                PasswordHash = CryptoHelper.PasswordHash(dto.Password.Trim(), 3),
-                IsActive = dto.IsActive ?? true,
-                CreatedAt = DateTime.UtcNow
-            };
-
-            _context.Users.Add(newUser);
-            _context.AuditTrails.Add(new AuditTrail
-            {
-                UserName = operatorUser,
-                Action = "CREATE_USER",
-                Module = "ADMIN_USERS",
-                Details = $"Created user '{newUser.UserName}' with role '{newUser.RoleName}'",
-                IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString()
-            });
-
-            await _context.SaveChangesAsync();
-            return Ok(new { success = true, message = "User created successfully.", user = newUser });
+            passwordHash = CryptoHelper.PasswordHash(dto.Password.Trim(), 3);
         }
-        else
+        else if (dto.Action.Equals("I", StringComparison.OrdinalIgnoreCase))
         {
-            var user = await _context.Users.FirstOrDefaultAsync(u => u.LoginID == dto.LoginID || u.UserName == dto.UserName);
-            if (user == null)
-                return NotFound(new { message = "User to update not found." });
+            return BadRequest(new { message = "Password is required for new user." });
+        }
 
-            user.FullName = dto.FullName.Trim();
-            user.DisplayName = dto.DisplayName ?? dto.FullName.Trim();
-            user.Email = dto.Email?.Trim();
-            user.ContactNumber = dto.ContactNumber?.Trim();
-            user.NIC = dto.NIC?.Trim();
-            if (!string.IsNullOrWhiteSpace(dto.RoleName))
-                user.RoleName = dto.RoleName.Trim();
-            if (dto.IsActive.HasValue)
-                user.IsActive = dto.IsActive.Value;
-            if (!string.IsNullOrWhiteSpace(dto.Password))
-                user.PasswordHash = CryptoHelper.PasswordHash(dto.Password.Trim(), 3);
-            user.UpdatedAt = DateTime.UtcNow;
+        var spParams = new[]
+        {
+            new SqlParameter("@Action", SqlDbType.Char, 1) { Value = dto.Action.ToUpperInvariant() },
+            new SqlParameter("@LoginID", SqlDbType.NVarChar, 50) { Value = (object?)dto.LoginID ?? DBNull.Value },
+            new SqlParameter("@UserName", SqlDbType.NVarChar, 100) { Value = dto.UserName.Trim() },
+            new SqlParameter("@FullName", SqlDbType.NVarChar, 200) { Value = dto.FullName.Trim() },
+            new SqlParameter("@DisplayName", SqlDbType.NVarChar, 150) { Value = (object?)dto.DisplayName ?? DBNull.Value },
+            new SqlParameter("@NIC", SqlDbType.VarChar, 20) { Value = (object?)dto.NIC ?? DBNull.Value },
+            new SqlParameter("@ContactNumber", SqlDbType.NVarChar, 20) { Value = (object?)dto.ContactNumber ?? DBNull.Value },
+            new SqlParameter("@Email", SqlDbType.NVarChar, 200) { Value = (object?)dto.Email ?? DBNull.Value },
+            new SqlParameter("@PasswordHash", SqlDbType.NVarChar, 500) { Value = (object?)passwordHash ?? DBNull.Value },
+            new SqlParameter("@RoleName", SqlDbType.NVarChar, 100) { Value = string.IsNullOrWhiteSpace(dto.RoleName) ? "User" : dto.RoleName.Trim() },
+            new SqlParameter("@IsActive", SqlDbType.Bit) { Value = dto.IsActive ?? true },
+            new SqlParameter("@Operator", SqlDbType.NVarChar, 100) { Value = operatorUser },
+            new SqlParameter("@IPAddress", SqlDbType.VarChar, 50) { Value = ipAddress }
+        };
 
-            _context.AuditTrails.Add(new AuditTrail
+        try
+        {
+            var dt = await _dba.GetDataAsync("[dbo].[InsertOrUpdate_User]", spParams);
+            var newId = dt.Rows.Count > 0 ? dt.Rows[0]["LoginID"]?.ToString() : dto.LoginID;
+            var msg = dt.Rows.Count > 0 ? dt.Rows[0]["Message"]?.ToString() : "Operation completed successfully.";
+
+            return Ok(new
             {
-                UserName = operatorUser,
-                Action = "UPDATE_USER",
-                Module = "ADMIN_USERS",
-                Details = $"Updated user '{user.UserName}'",
-                IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString()
+                success = true,
+                message = msg,
+                loginID = newId
             });
-
-            await _context.SaveChangesAsync();
-            return Ok(new { success = true, message = "User updated successfully.", user });
+        }
+        catch (SqlException ex)
+        {
+            return BadRequest(new { message = ex.Message });
         }
     }
 
@@ -156,36 +158,48 @@ public class AdminController : ControllerBase
     [HttpPost("ToggleLockUser")]
     public async Task<IActionResult> ToggleLockUser([FromBody] LockRequest req)
     {
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.LoginID == req.LoginID);
-        if (user == null)
-            return NotFound(new { message = "User not found." });
+        if (string.IsNullOrWhiteSpace(req.LoginID))
+            return BadRequest(new { message = "LoginID is required." });
 
         var operatorUser = Request.Headers["X-UserName"].FirstOrDefault() ?? "Admin";
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
 
-        user.IsLockedOut = req.Lock;
-        user.LoginMessage = req.Lock ? (req.Reason ?? "Account locked by Administrator.") : null;
-        if (!req.Lock)
+        var spParams = new[]
         {
-            user.FailedLoginAttemptCount = 0;
-        }
+            new SqlParameter("@LoginID", SqlDbType.NVarChar, 50) { Value = req.LoginID },
+            new SqlParameter("@Lock", SqlDbType.Bit) { Value = req.Lock },
+            new SqlParameter("@Reason", SqlDbType.NVarChar, 500) { Value = (object?)req.Reason ?? DBNull.Value },
+            new SqlParameter("@Operator", SqlDbType.NVarChar, 100) { Value = operatorUser },
+            new SqlParameter("@IPAddress", SqlDbType.VarChar, 50) { Value = ipAddress }
+        };
 
-        _context.AuditTrails.Add(new AuditTrail
+        await _dba.ExecuteCommandAsync("[dbo].[ToggleLockUser]", spParams);
+
+        return Ok(new
         {
-            UserName = operatorUser,
-            Action = req.Lock ? "LOCK_USER" : "UNLOCK_USER",
-            Module = "ADMIN_USERS",
-            Details = $"User '{user.UserName}' {(req.Lock ? "locked" : "unlocked")}. Reason: {req.Reason ?? "N/A"}",
-            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString()
+            success = true,
+            message = $"User {(req.Lock ? "locked" : "unlocked")} successfully."
         });
-
-        await _context.SaveChangesAsync();
-        return Ok(new { success = true, message = $"User {(req.Lock ? "locked" : "unlocked")} successfully." });
     }
 
     [HttpGet("roles")]
     public async Task<IActionResult> GetRoles()
     {
-        var roles = await _context.UserRoles.Where(r => r.IsActive).ToListAsync();
+        var dt = await _dba.GetDataAsync("[dbo].[Get_All_Roles]");
+        var roles = new List<object>();
+
+        foreach (DataRow row in dt.Rows)
+        {
+            roles.Add(new
+            {
+                roleId = Convert.ToInt32(row["RoleId"]),
+                roleName = row["RoleName"]?.ToString(),
+                description = row["Description"]?.ToString(),
+                isActive = Convert.ToBoolean(row["IsActive"]),
+                createdAt = row["CreatedAt"] != DBNull.Value ? Convert.ToDateTime(row["CreatedAt"]) : (DateTime?)null
+            });
+        }
+
         return Ok(roles);
     }
 
@@ -198,25 +212,118 @@ public class AdminController : ControllerBase
     [HttpPost("AssignRole")]
     public async Task<IActionResult> AssignRole([FromBody] AssignRoleRequest req)
     {
-        var user = await _context.Users.FirstOrDefaultAsync(u => u.LoginID == req.LoginID);
-        if (user == null)
-            return NotFound(new { message = "User not found." });
+        if (string.IsNullOrWhiteSpace(req.LoginID) || string.IsNullOrWhiteSpace(req.RoleName))
+            return BadRequest(new { message = "LoginID and RoleName are required." });
 
         var operatorUser = Request.Headers["X-UserName"].FirstOrDefault() ?? "Admin";
-        var oldRole = user.RoleName;
-        user.RoleName = req.RoleName;
-        user.UpdatedAt = DateTime.UtcNow;
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
 
-        _context.AuditTrails.Add(new AuditTrail
+        var spParams = new[]
         {
-            UserName = operatorUser,
-            Action = "ASSIGN_ROLE",
-            Module = "ADMIN_ROLES",
-            Details = $"Changed role for '{user.UserName}' from '{oldRole}' to '{req.RoleName}'",
-            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString()
-        });
+            new SqlParameter("@LoginID", SqlDbType.NVarChar, 50) { Value = req.LoginID },
+            new SqlParameter("@RoleName", SqlDbType.NVarChar, 100) { Value = req.RoleName.Trim() },
+            new SqlParameter("@Operator", SqlDbType.NVarChar, 100) { Value = operatorUser },
+            new SqlParameter("@IPAddress", SqlDbType.VarChar, 50) { Value = ipAddress }
+        };
 
-        await _context.SaveChangesAsync();
-        return Ok(new { success = true, message = "Role assigned successfully." });
+        await _dba.ExecuteCommandAsync("[dbo].[Assign_User_Role]", spParams);
+
+        return Ok(new
+        {
+            success = true,
+            message = "Role assigned successfully."
+        });
+    }
+
+    public class RoleWiseMenuAccessQueryDto
+    {
+        public int? RoleID { get; set; }
+        public int? MenuID { get; set; }
+        public int? IsActive { get; set; }
+    }
+
+    [HttpPost("GetRoleWiseMenuAccess")]
+    public async Task<IActionResult> GetRoleWiseMenuAccess([FromBody] RoleWiseMenuAccessQueryDto? dto)
+    {
+        int roleId = dto?.RoleID ?? 1;
+
+        var spParams = new[]
+        {
+            new SqlParameter("@RoleID", SqlDbType.Int) { Value = roleId }
+        };
+
+        var dt = await _dba.GetDataAsync("[dbo].[GetRoleWiseMenuAccess]", spParams);
+        var list = new List<object>();
+
+        foreach (DataRow row in dt.Rows)
+        {
+            list.Add(new
+            {
+                roleID = Convert.ToInt32(row["RoleID"]),
+                roleName = row["RoleName"]?.ToString() ?? "",
+                accessID = Convert.ToInt32(row["AccessID"]),
+                functionID = Convert.ToInt32(row["FunctionID"]),
+                menuID = Convert.ToInt32(row["MenuID"]),
+                moduleID = Convert.ToInt32(row["ModuleID"]),
+                moduleName = row["ModuleName"]?.ToString() ?? "",
+                functionName = row["FunctionName"]?.ToString() ?? "",
+                menuName = row["MenuName"]?.ToString() ?? "",
+                navigationURL = row["NavigationURL"]?.ToString() ?? "",
+                displayOrder = Convert.ToInt32(row["DisplayOrder"]),
+                isActive = Convert.ToInt32(row["IsActive"])
+            });
+        }
+
+        return Ok(list);
+    }
+
+    public class GrantOrRevokeRoleWiseMenuAccessDto
+    {
+        public int RoleID { get; set; }
+        public int MenuID { get; set; }
+        public int IsActive { get; set; }
+    }
+
+    [HttpPost("GrantOrRevokeRoleWiseMenuAccess")]
+    public async Task<IActionResult> GrantOrRevokeRoleWiseMenuAccess([FromBody] GrantOrRevokeRoleWiseMenuAccessDto dto)
+    {
+        var operatorUser = Request.Headers["X-UserName"].FirstOrDefault() ?? "Admin";
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+
+        var spParams = new[]
+        {
+            new SqlParameter("@RoleID", SqlDbType.Int) { Value = dto.RoleID },
+            new SqlParameter("@MenuID", SqlDbType.Int) { Value = dto.MenuID },
+            new SqlParameter("@IsActive", SqlDbType.Int) { Value = dto.IsActive },
+            new SqlParameter("@Operator", SqlDbType.NVarChar, 100) { Value = operatorUser },
+            new SqlParameter("@IPAddress", SqlDbType.VarChar, 50) { Value = ipAddress }
+        };
+
+        await _dba.ExecuteCommandAsync("[dbo].[GrantOrRevokeRoleWiseMenuAccess]", spParams);
+
+        return Ok(new
+        {
+            success = true,
+            message = $"Menu access {(dto.IsActive == 1 ? "granted" : "revoked")} successfully."
+        });
+    }
+
+    public class GetUserRolesFilterDto
+    {
+        public int? RoleID { get; set; }
+        public string? RoleName { get; set; }
+        public int? IsActive { get; set; }
+    }
+
+    [HttpPost("GetUserRoles")]
+    public async Task<IActionResult> GetUserRolesPost([FromBody] GetUserRolesFilterDto? dto)
+    {
+        return await GetRoles();
+    }
+
+    [HttpGet("GetUserRoles")]
+    public async Task<IActionResult> GetUserRolesGet()
+    {
+        return await GetRoles();
     }
 }

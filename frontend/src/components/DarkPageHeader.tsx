@@ -1,48 +1,86 @@
-import React from "react";
+"use client";
 
-interface DarkPageHeaderProps {
-  title: string;
-  subtitle?: string;
+import React from "react";
+import { RefreshCw, PanelLeftClose, PanelLeft } from "lucide-react";
+import { useSidebar } from "@/Contexts/SidebarContext";
+
+export interface DarkPageHeaderProps {
   icon?: React.ReactNode;
+  breadcrumbs: string[];
+  pageTitle: string;
+  description?: string;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
   actions?: React.ReactNode;
-  breadcrumbs?: { label: string; href?: string }[];
+  className?: string;
 }
 
 export default function DarkPageHeader({
-  title,
-  subtitle,
   icon,
-  actions,
   breadcrumbs,
+  pageTitle,
+  description,
+  onRefresh,
+  isRefreshing = false,
+  actions,
+  className = "",
 }: DarkPageHeaderProps) {
+  const { isSidebarHidden, toggleSidebar } = useSidebar();
+
   return (
-    <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white rounded-2xl p-6 sm:p-8 shadow-sm border border-slate-800 mb-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          {breadcrumbs && breadcrumbs.length > 0 && (
-            <div className="flex items-center gap-1.5 text-xs text-indigo-300 font-medium mb-2">
-              {breadcrumbs.map((b, i) => (
-                <React.Fragment key={i}>
-                  {i > 0 && <span className="text-slate-500">/</span>}
-                  <span>{b.label}</span>
-                </React.Fragment>
-              ))}
-            </div>
-          )}
-          <div className="flex items-center gap-3">
-            {icon && (
-              <div className="p-2.5 rounded-xl bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
-                {icon}
-              </div>
+    <header
+      className={`bg-[#1e293b] text-white px-3 py-2 rounded-lg flex items-center justify-between shadow-xs border border-slate-800/80 transition-all ${className}`}
+    >
+      <div className="flex items-center gap-2.5 min-w-0 flex-1 mr-2 text-xs">
+        <button
+          type="button"
+          onClick={toggleSidebar}
+          className="p-1.5 -ml-1 text-slate-400 hover:text-white hover:bg-slate-800/70 rounded-md transition-colors"
+          title={isSidebarHidden ? "Show Sidebar" : "Hide Sidebar"}
+        >
+          {isSidebarHidden ? <PanelLeft className="w-4 h-4 text-cyan-400" /> : <PanelLeftClose className="w-4 h-4" />}
+        </button>
+
+        {icon && <div className="text-cyan-400 shrink-0">{icon}</div>}
+
+        <div className="flex flex-col min-w-0">
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+            {breadcrumbs.map((b, i) => (
+              <React.Fragment key={i}>
+                {i > 0 && <span className="text-slate-600">/</span>}
+                <span className={i === breadcrumbs.length - 1 ? "text-cyan-300 font-semibold" : ""}>
+                  {b}
+                </span>
+              </React.Fragment>
+            ))}
+          </div>
+          <div className="flex items-baseline gap-2">
+            <h1 className="text-sm font-bold text-white tracking-tight leading-none mt-0.5">
+              {pageTitle}
+            </h1>
+            {description && (
+              <span className="hidden md:inline text-[11px] text-slate-400 font-normal truncate">
+                • {description}
+              </span>
             )}
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-black tracking-tight">{title}</h1>
-              {subtitle && <p className="text-sm text-slate-400 mt-1">{subtitle}</p>}
-            </div>
           </div>
         </div>
-        {actions && <div className="flex items-center gap-2.5 self-start sm:self-auto">{actions}</div>}
       </div>
-    </div>
+
+      <div className="flex items-center gap-2 shrink-0">
+        {onRefresh && (
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800/70 rounded-md transition-colors disabled:opacity-50"
+            title="Refresh data"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin text-cyan-400" : ""}`} />
+          </button>
+        )}
+        {actions}
+      </div>
+    </header>
   );
 }

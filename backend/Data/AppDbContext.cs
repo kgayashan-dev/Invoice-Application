@@ -87,10 +87,10 @@ public class AppDbContext : DbContext
         if (!UserRoles.Any())
         {
             UserRoles.AddRange(
-                new UserRole { RoleId = 1, RoleName = "System Administrator", Description = "Full system administration and settings access." },
-                new UserRole { RoleId = 2, RoleName = "Finance Manager", Description = "Manage invoices, approvals, and financial reports." },
-                new UserRole { RoleId = 3, RoleName = "Billing Officer", Description = "Create and process customer invoices." },
-                new UserRole { RoleId = 4, RoleName = "User", Description = "Standard application viewer access." }
+                new UserRole { RoleName = "System Administrator", Description = "Full system administration and settings access." },
+                new UserRole { RoleName = "Finance Manager", Description = "Manage invoices, approvals, and financial reports." },
+                new UserRole { RoleName = "Billing Officer", Description = "Create and process customer invoices." },
+                new UserRole { RoleName = "User", Description = "Standard application viewer access." }
             );
             SaveChanges();
         }

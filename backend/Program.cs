@@ -1,25 +1,26 @@
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using backend.Data;
+using backend.HelperClasses;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add Database Context with SQL Server
+// Add Database Context with SQL Server & Stored Procedure Access Service
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(connectionString));
 
-// Add CORS policy for Frontend
-var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-    ?? new[] { "http://localhost:3000", "http://127.0.0.1:3000" };
+// Register DBAccess for Stored Procedure execution (matching My HR architecture)
+builder.Services.AddScoped<DBAccess>();
 
+// Add CORS policy for Frontend
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins(allowedOrigins)
+        policy.SetIsOriginAllowed(_ => true)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -36,7 +37,16 @@ builder.Services.AddControllers()
 
 // OpenAPI / Swagger
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+    {
+        Title = "Invoice Application API",
+        Version = "v1",
+        Description = "API for Invoice Management & Administration Portal"
+    });
+    c.ResolveConflictingActions(apiDescriptions => apiDescriptions.First());
+});
 
 var app = builder.Build();
 
@@ -59,15 +69,13 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// Configure HTTP request pipeline
-if (app.Environment.IsDevelopment())
+// Configure HTTP request pipeline - Swagger enabled in all environments
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Invoice API V1");
-    });
-}
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Invoice API V1");
+    c.RoutePrefix = "swagger";
+});
 
 app.UseCors("AllowFrontend");
 

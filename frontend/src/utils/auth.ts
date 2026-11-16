@@ -7,16 +7,16 @@ export interface StoredUser {
 
 export function getStoredUser(): StoredUser | null {
   if (typeof window === "undefined") return null;
-  const fullName = localStorage.getItem("FullName");
-  const userName = localStorage.getItem("UserName");
-  const loginID = localStorage.getItem("loginID");
-  const roleName = localStorage.getItem("RoleName") || "";
-  if (!fullName && !userName) return null;
+  const fullName = localStorage.getItem("FullName") || "";
+  const userName = localStorage.getItem("UserName") || "";
+  const loginID = localStorage.getItem("loginID") || "";
+  const roleName = localStorage.getItem("RoleName") || "User";
+  if (!fullName.trim() && !userName.trim()) return null;
   return {
-    fullName: fullName || "",
-    userName: userName || "",
-    loginID: loginID || "",
-    roleName: roleName || "User"
+    fullName: fullName.trim() || userName.trim(),
+    userName: userName.trim() || fullName.trim(),
+    loginID: loginID.trim(),
+    roleName: roleName.trim() || "User"
   };
 }
 

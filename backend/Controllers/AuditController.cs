@@ -1,6 +1,7 @@
+using System.Data;
+using System.Data.SqlClient;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using backend.Data;
+using backend.HelperClasses;
 
 namespace backend.Controllers;
 
@@ -8,33 +9,39 @@ namespace backend.Controllers;
 [Route("api/[controller]")]
 public class AuditController : ControllerBase
 {
-    private readonly AppDbContext _context;
+    private readonly DBAccess _dba;
 
-    public AuditController(AppDbContext context)
+    public AuditController(DBAccess dba)
     {
-        _context = context;
+        _dba = dba;
     }
 
     [HttpGet]
     public async Task<IActionResult> GetAuditLogs([FromQuery] string? module, [FromQuery] string? search, [FromQuery] int limit = 100)
     {
-        var query = _context.AuditTrails.AsQueryable();
-
-        if (!string.IsNullOrWhiteSpace(module) && module != "ALL")
+        var spParams = new[]
         {
-            query = query.Where(a => a.Module == module);
-        }
+            new SqlParameter("@Module", SqlDbType.NVarChar, 100) { Value = string.IsNullOrWhiteSpace(module) ? (object)DBNull.Value : module.Trim() },
+            new SqlParameter("@Search", SqlDbType.NVarChar, 200) { Value = string.IsNullOrWhiteSpace(search) ? (object)DBNull.Value : search.Trim() },
+            new SqlParameter("@Limit", SqlDbType.Int) { Value = limit <= 0 ? 100 : limit }
+        };
 
-        if (!string.IsNullOrWhiteSpace(search))
+        var dt = await _dba.GetDataAsync("[dbo].[Get_Audit_Logs]", spParams);
+        var logs = new List<object>();
+
+        foreach (DataRow row in dt.Rows)
         {
-            var s = search.Trim().ToLower();
-            query = query.Where(a => a.UserName.ToLower().Contains(s) || a.Action.ToLower().Contains(s) || (a.Details != null && a.Details.ToLower().Contains(s)));
+            logs.Add(new
+            {
+                id = Convert.ToInt32(row["Id"]),
+                timestamp = Convert.ToDateTime(row["Timestamp"]),
+                userName = row["UserName"]?.ToString(),
+                action = row["Action"]?.ToString(),
+                module = row["Module"]?.ToString(),
+                details = row["Details"]?.ToString(),
+                ipAddress = row["IpAddress"]?.ToString()
+            });
         }
-
-        var logs = await query
-            .OrderByDescending(a => a.Timestamp)
-            .Take(limit)
-            .ToListAsync();
 
         return Ok(logs);
     }

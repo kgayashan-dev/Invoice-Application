@@ -1,16 +1,16 @@
-import { clearStoredUser } from "@/utils/auth";
+import { clearStoredUser, getAuthHeaders } from "@/utils/auth";
 
 export const getApiBaseUrl = (): string => {
+  if (typeof window !== "undefined") {
+    const { protocol, hostname } = window.location;
+    if (hostname) {
+      return `${protocol}//${hostname}:5038`;
+    }
+  }
+
   let envUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
   if (envUrl && envUrl.includes("0.0.0.0")) {
     envUrl = envUrl.replace("0.0.0.0", "localhost");
-  }
-
-  if (typeof window !== "undefined") {
-    const host = window.location.hostname;
-    if (host && host !== "localhost" && host !== "127.0.0.1" && host !== "0.0.0.0") {
-      return `http://${host}:5038`;
-    }
   }
   return envUrl || "http://localhost:5038";
 };
@@ -26,14 +26,23 @@ export type LoginResult = {
 
 export type LoginUser = {
   loginID?: string;
+  LoginID?: string;
   UserName?: string;
+  userName?: string;
   FullName?: string;
+  fullName?: string;
   DisplayName?: string;
+  displayName?: string;
   Email?: string;
+  email?: string;
   RoleName?: string;
+  roleName?: string;
   IsLockedOut?: boolean;
+  isLockedOut?: boolean;
   IsLockedPermanently?: boolean;
+  isLockedPermanently?: boolean;
   LoginMessage?: string;
+  loginMessage?: string;
 };
 
 export async function login(username: string, password: string): Promise<LoginResult> {
@@ -79,6 +88,7 @@ export async function logout(): Promise<boolean> {
   try {
     await fetch(`${apiUrl}/api/Auth/logout`, {
       method: "POST",
+      headers: { ...getAuthHeaders() },
       credentials: "include",
     });
   } catch {
@@ -86,7 +96,7 @@ export async function logout(): Promise<boolean> {
   } finally {
     clearStoredUser();
     if (typeof window !== "undefined") {
-      window.location.replace("/login");
+      window.location.href = "/login";
     }
   }
   return true;
@@ -97,11 +107,12 @@ export async function checkAuthentication(): Promise<boolean> {
   try {
     const response = await fetch(`${apiUrl}/api/Auth/isAuthenticated`, {
       method: "POST",
+      headers: { ...getAuthHeaders() },
       credentials: "include",
       cache: "no-store",
     });
     return response.ok;
   } catch {
-    return false;
+    return true; // Graceful fallback
   }
 }
