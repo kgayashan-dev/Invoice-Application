@@ -8,6 +8,9 @@ import AppCard from "@/components/layout/AppCard";
 import AppAlert from "@/components/feedback/AppAlert";
 import FormField from "@/components/forms/FormField";
 import TextInput from "@/components/forms/TextInput";
+import AuthGuardAccess from "@/components/AuthGuardAccess";
+import { useCurrency } from "@/Contexts/CurrencyContext";
+import { SUPPORTED_CURRENCIES } from "@/utils/currency";
 import { getApiBaseUrl } from "@/app/login/action";
 import { getAuthHeaders } from "@/utils/auth";
 
@@ -20,6 +23,7 @@ interface SystemSettingItem {
 }
 
 export default function SettingsPage() {
+  const { setCurrency } = useCurrency();
   const [settings, setSettings] = useState<SystemSettingItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -75,6 +79,11 @@ export default function SettingsPage() {
       if (!res.ok) throw new Error(data.message || "Failed to update settings.");
 
       setMessage({ text: "System settings saved successfully.", type: "success" });
+      const curr = settings.find((s) => s.settingKey.toLowerCase() === "defaultcurrency");
+      if (curr) {
+        setCurrency(curr.settingValue);
+      }
+      window.dispatchEvent(new CustomEvent("systemSettingsUpdated"));
       await fetchSettings();
     } catch (err: unknown) {
       setMessage({
@@ -89,7 +98,8 @@ export default function SettingsPage() {
   const categories = Array.from(new Set(settings.map((s) => s.category)));
 
   return (
-    <PageShell>
+    <AuthGuardAccess requiredPermission={3001}>
+      <PageShell>
       <DarkPageHeader
         icon={<Settings className="w-4 h-4 text-cyan-400" />}
         breadcrumbs={["Home", "Administration", "Settings"]}
@@ -124,10 +134,24 @@ export default function SettingsPage() {
                     label={s.settingKey.replace(/([A-Z])/g, " $1").trim()}
                     hint={s.description}
                   >
-                    <TextInput
-                      value={s.settingValue}
-                      onChange={(e) => handleChange(s.id, e.target.value)}
-                    />
+                    {s.settingKey.toLowerCase() === "defaultcurrency" ? (
+                      <select
+                        value={s.settingValue.toUpperCase()}
+                        onChange={(e) => handleChange(s.id, e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                      >
+                        {Object.values(SUPPORTED_CURRENCIES).map((c) => (
+                          <option key={c.code} value={c.code}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <TextInput
+                        value={s.settingValue}
+                        onChange={(e) => handleChange(s.id, e.target.value)}
+                      />
+                    )}
                   </FormField>
                 ))}
             </div>
@@ -146,5 +170,6 @@ export default function SettingsPage() {
         </div>
       </form>
     </PageShell>
+    </AuthGuardAccess>
   );
 }

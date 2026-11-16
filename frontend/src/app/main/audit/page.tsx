@@ -7,6 +7,7 @@ import PageShell from "@/components/layout/PageShell";
 import PageToolbar from "@/components/layout/PageToolbar";
 import DataTable, { ColumnDef } from "@/components/data/DataTable";
 import StatusBadge from "@/components/feedback/StatusBadge";
+import AuthGuardAccess from "@/components/AuthGuardAccess";
 import { getApiBaseUrl } from "@/app/login/action";
 import { getAuthHeaders } from "@/utils/auth";
 
@@ -112,7 +113,8 @@ export default function AuditPage() {
   ];
 
   return (
-    <PageShell>
+    <AuthGuardAccess requiredPermission={2001}>
+      <PageShell>
       <DarkPageHeader
         icon={<History className="w-4 h-4 text-cyan-400" />}
         breadcrumbs={["Home", "Administration", "Audit Trail"]}
@@ -157,5 +159,6 @@ export default function AuditPage() {
         />
       </div>
     </PageShell>
+    </AuthGuardAccess>
   );
 }

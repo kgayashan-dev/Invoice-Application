@@ -3,6 +3,8 @@
 import React from "react";
 import { RefreshCw, PanelLeftClose, PanelLeft } from "lucide-react";
 import { useSidebar } from "@/Contexts/SidebarContext";
+import NotificationBell from "@/components/NotificationBell";
+import { useCurrency } from "@/Contexts/CurrencyContext";
 
 export interface DarkPageHeaderProps {
   icon?: React.ReactNode;
@@ -26,6 +28,7 @@ export default function DarkPageHeader({
   className = "",
 }: DarkPageHeaderProps) {
   const { isSidebarHidden, toggleSidebar } = useSidebar();
+  const { currency, currencyPrefix } = useCurrency();
 
   return (
     <header
@@ -68,12 +71,21 @@ export default function DarkPageHeader({
       </div>
 
       <div className="flex items-center gap-2 shrink-0">
+        <span
+          className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-slate-800 text-cyan-300 border border-slate-700/80 shadow-2xs"
+          title={`Active Currency: ${currency} (${currencyPrefix.trim()})`}
+        >
+          <span className="text-slate-400">CUR:</span> {currency} ({currencyPrefix.trim()})
+        </span>
+
+        <NotificationBell />
+
         {onRefresh && (
           <button
             type="button"
             onClick={onRefresh}
             disabled={isRefreshing}
-            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800/70 rounded-md transition-colors disabled:opacity-50"
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800/70 rounded-md transition-colors disabled:opacity-50 cursor-pointer"
             title="Refresh data"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin text-cyan-400" : ""}`} />

@@ -17,6 +17,8 @@ import PageShell from "@/components/layout/PageShell";
 import AppCard from "@/components/layout/AppCard";
 import StatCard from "@/components/StatCard";
 import StatusBadge from "@/components/feedback/StatusBadge";
+import AuthGuardAccess from "@/components/AuthGuardAccess";
+import { useCurrency } from "@/Contexts/CurrencyContext";
 import { getApiBaseUrl } from "@/app/login/action";
 import { getStoredUser, getUserRole } from "@/utils/auth";
 
@@ -50,6 +52,7 @@ interface InvoiceItem {
 }
 
 export default function DashboardPage() {
+  const { formatAmount } = useCurrency();
   const [user, setUser] = useState<{ fullName: string; userName: string; roleName?: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
@@ -107,7 +110,8 @@ export default function DashboardPage() {
   const roleName = user?.roleName || getUserRole(user?.userName || "");
 
   return (
-    <PageShell>
+    <AuthGuardAccess requiredPermission={1001}>
+      <PageShell>
       {/* Dark Page Header */}
       <DarkPageHeader
         icon={<Building2 className="w-4 h-4 text-cyan-400" />}
@@ -132,7 +136,7 @@ export default function DashboardPage() {
         <StatCard
           title="Total Invoices"
           value={stats.invoiceCount}
-          subtitle={`$${stats.totalBilledAmount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} billed`}
+          subtitle={`${formatAmount(stats.totalBilledAmount)} billed`}
           icon={<Receipt className="w-4 h-4" />}
           color="blue"
         />
@@ -205,7 +209,7 @@ export default function DashboardPage() {
                     </div>
                     <div className="text-right shrink-0">
                       <p className="font-bold text-slate-900 text-sm">
-                        ${Number(inv.totalAmount).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {formatAmount(inv.totalAmount)}
                       </p>
                       <p className="text-[10px] text-slate-400 font-mono mt-0.5">
                         Due {new Date(inv.dueDate).toLocaleDateString()}
@@ -346,5 +350,6 @@ export default function DashboardPage() {
         </div>
       </div>
     </PageShell>
+    </AuthGuardAccess>
   );
 }

@@ -30,6 +30,7 @@ export function clearStoredUser(): void {
   localStorage.removeItem("LoginMessage");
   localStorage.removeItem("userPermissions");
   sessionStorage.clear();
+  window.dispatchEvent(new CustomEvent("permissionsUpdated", { detail: [] }));
 }
 
 export function getInitials(fullName: string): string {

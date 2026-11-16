@@ -19,6 +19,7 @@ import DarkPageHeader from "@/components/DarkPageHeader";
 import PageShell from "@/components/layout/PageShell";
 import AppAlert from "@/components/feedback/AppAlert";
 import { normalizeApiError } from "@/utils/error";
+import { getAuthHeaders } from "@/utils/auth";
 
 interface RoleItem {
   roleId: number;
@@ -60,7 +61,7 @@ export default function RoleWiseMenuAccessPage() {
     try {
       const res = await fetch(`${getApiBaseUrl()}/api/Admin/roles`, {
         method: "GET",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         credentials: "include",
       });
       if (res.ok) {
@@ -88,7 +89,7 @@ export default function RoleWiseMenuAccessPage() {
     try {
       const res = await fetch(`${getApiBaseUrl()}/api/Admin/GetRoleWiseMenuAccess`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         credentials: "include",
         body: JSON.stringify({ roleID }),
       });
@@ -174,7 +175,7 @@ export default function RoleWiseMenuAccessPage() {
       const promises = ids.map((menuID) =>
         fetch(`${getApiBaseUrl()}/api/Admin/GrantOrRevokeRoleWiseMenuAccess`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
           credentials: "include",
           body: JSON.stringify({ roleID: selectedRoleID, menuID, isActive: 1 }),
         })
@@ -207,7 +208,7 @@ export default function RoleWiseMenuAccessPage() {
       const promises = ids.map((menuID) =>
         fetch(`${getApiBaseUrl()}/api/Admin/GrantOrRevokeRoleWiseMenuAccess`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
           credentials: "include",
           body: JSON.stringify({ roleID: selectedRoleID, menuID, isActive: 0 }),
         })
@@ -238,7 +239,7 @@ export default function RoleWiseMenuAccessPage() {
     try {
       const res = await fetch(`${getApiBaseUrl()}/api/Admin/GrantOrRevokeRoleWiseMenuAccess`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         credentials: "include",
         body: JSON.stringify({
           roleID: selectedRoleID,

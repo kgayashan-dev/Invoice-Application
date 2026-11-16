@@ -83,7 +83,11 @@ public class AuthController : ControllerBase
             await _dba.ExecuteCommandAsync("[dbo].[RegisterFailedLoginAttempt]", failParams);
 
             // Re-check lockout status
-            var checkDt = await _dba.GetDataAsync("[dbo].[getUserLoginDetails]", spParams);
+            var checkParams = new[]
+            {
+                new SqlParameter("@UserName", SqlDbType.NVarChar, 100) { Value = userName }
+            };
+            var checkDt = await _dba.GetDataAsync("[dbo].[getUserLoginDetails]", checkParams);
             var isNowLocked = checkDt.Rows.Count > 0 && checkDt.Rows[0]["IsLockedOut"] != DBNull.Value && Convert.ToBoolean(checkDt.Rows[0]["IsLockedOut"]);
 
             return Unauthorized(new
@@ -107,6 +111,13 @@ public class AuthController : ControllerBase
         var displayName = row["DisplayName"]?.ToString() ?? fullName;
         var email = row["Email"]?.ToString() ?? "";
         var roleName = row["RoleName"]?.ToString() ?? "User";
+
+        // Set ASP.NET Core session variables (matching SE-Group-Project)
+        HttpContext.Session.SetString("LoginID", loginID);
+        HttpContext.Session.SetString("UserName", userName);
+        HttpContext.Session.SetString("UserRole", roleName);
+        HttpContext.Session.SetString("FullName", fullName);
+        HttpContext.Session.SetString("DisplayName", displayName);
 
         return Ok(new
         {
@@ -132,7 +143,10 @@ public class AuthController : ControllerBase
     [HttpPost("logout")]
     public async Task<IActionResult> Logout()
     {
-        var userName = Request.Headers["X-UserName"].FirstOrDefault() ?? "Unknown";
+        var userName = HttpContext.Session.GetString("UserName")
+                    ?? HttpContext.Session.GetString("LoginID")
+                    ?? Request.Headers["X-UserName"].FirstOrDefault()
+                    ?? "Unknown";
         var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
 
         var spParams = new[]
@@ -153,14 +167,42 @@ public class AuthController : ControllerBase
             // fallback
         }
 
-        return Ok(new { success = true });
+        HttpContext.Session.Clear();
+
+        Response.Cookies.Delete(".InvoiceApp.Session", new CookieOptions
+        {
+            Path = "/",
+            Secure = HttpContext.Request.IsHttps,
+            SameSite = HttpContext.Request.IsHttps ? SameSiteMode.None : SameSiteMode.Lax
+        });
+
+        Response.Headers["Cache-Control"] = "no-cache, no-store, must-revalidate";
+        Response.Headers["Pragma"] = "no-cache";
+        Response.Headers["Expires"] = "0";
+
+        return Ok(new { success = true, message = "You have been signed out successfully." });
     }
 
     [HttpGet("isAuthenticated")]
     [HttpPost("isAuthenticated")]
     public IActionResult IsAuthenticated()
     {
-        return Ok(new { authenticated = true });
+        var userId = HttpContext.Session.GetString("LoginID")
+                  ?? HttpContext.Session.GetString("UserName")
+                  ?? Request.Headers["X-UserName"].FirstOrDefault();
+
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            return Ok(new
+            {
+                authenticated = true,
+                message = "You are authenticated.",
+                userName = userId,
+                roleName = HttpContext.Session.GetString("UserRole") ?? Request.Headers["X-User-Role"].FirstOrDefault()
+            });
+        }
+
+        return Unauthorized(new { authenticated = false, message = "You are not authenticated." });
     }
 
     public class MenuRequest
@@ -176,11 +218,24 @@ public class AuthController : ControllerBase
     [HttpPost("GetMenuID")]
     public async Task<IActionResult> GetMenuID([FromBody] MenuRequest? request)
     {
-        var userName = Request.Headers["X-UserName"].FirstOrDefault() ?? request?.LoginID;
+        var userName = HttpContext.Session.GetString("LoginID")
+                    ?? HttpContext.Session.GetString("UserName")
+                    ?? Request.Headers["X-UserName"].FirstOrDefault()
+                    ?? request?.LoginID;
+
+        if (string.IsNullOrWhiteSpace(userName))
+        {
+            return Unauthorized(new { message = "User is not logged in." });
+        }
+
+        var rawMenuId = request?.MenuId ?? "0";
+        if (!int.TryParse(rawMenuId, out var targetMenuId))
+            targetMenuId = 0;
+
         var spParams = new[]
         {
-            new SqlParameter("@LoginID", SqlDbType.NVarChar, 100) { Value = (object?)userName ?? DBNull.Value },
-            new SqlParameter("@MenuID", SqlDbType.Int) { Value = 0 }
+            new SqlParameter("@LoginID", SqlDbType.NVarChar, 100) { Value = userName },
+            new SqlParameter("@MenuID", SqlDbType.Int) { Value = targetMenuId }
         };
 
         var dt = await _dba.GetDataAsync("[dbo].[GetMenuID]", spParams);

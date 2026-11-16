@@ -113,6 +113,6 @@ export async function checkAuthentication(): Promise<boolean> {
     });
     return response.ok;
   } catch {
-    return true; // Graceful fallback
+    return false;
   }
 }

@@ -228,42 +228,110 @@ BEGIN
     DECLARE @RoleName NVARCHAR(100);
     DECLARE @RoleId INT;
 
+    SET @LoginID = LTRIM(RTRIM(@LoginID));
+
+    DECLARE @RoleId INT = NULL;
+    DECLARE @RoleName NVARCHAR(100) = NULL;
+
     IF @LoginID IS NOT NULL AND @LoginID <> ''
     BEGIN
-        SELECT TOP 1 @RoleName = [RoleName] FROM [dbo].[Users] WHERE [UserName] = @LoginID OR [LoginID] = @LoginID;
+        SELECT TOP 1 @RoleName = [RoleName] 
+        FROM [dbo].[Users] 
+        WHERE LOWER(LTRIM(RTRIM([UserName]))) = LOWER(@LoginID) 
+           OR LOWER(LTRIM(RTRIM([LoginID])))  = LOWER(@LoginID);
     END
 
     IF @RoleName IS NOT NULL
     BEGIN
-        SELECT TOP 1 @RoleId = [RoleId] FROM [dbo].[UserRoles] WHERE [RoleName] = @RoleName;
+        SELECT TOP 1 @RoleId = [RoleId] 
+        FROM [dbo].[UserRoles] 
+        WHERE LOWER(LTRIM(RTRIM([RoleName]))) = LOWER(LTRIM(RTRIM(@RoleName))) 
+          AND [IsActive] = 1;
     END
 
-    -- If Admin or no role specified or RoleId 1, return all active access items
-    IF @RoleId = 1 OR @RoleName = 'System Administrator' OR @RoleId IS NULL
+    IF @RoleId IS NOT NULL
     BEGIN
         SELECT 
             al.[AccessID]      AS [FunctionID],
+            al.[AccessID]      AS [AccessID],
             al.[FunctionName]  AS [FunctionName],
             al.[NavigationURL] AS [NavigationURL],
+            al.[NavigationURL] AS [URL],
             al.[DisplayOrder]  AS [DisplayOrder],
-            al.[ModuleName]    AS [Module]
-        FROM [dbo].[AccessList] al
-        WHERE al.[IsActive] = 1
-        ORDER BY al.[ModuleID], al.[DisplayOrder];
-    END
-    ELSE
-    BEGIN
-        SELECT 
-            al.[AccessID]      AS [FunctionID],
-            al.[FunctionName]  AS [FunctionName],
-            al.[NavigationURL] AS [NavigationURL],
-            al.[DisplayOrder]  AS [DisplayOrder],
+            al.[DisplayOrder]  AS [SortOrder],
+            al.[MenuID]        AS [MenuID],
+            al.[ModuleID]      AS [ModuleID],
+            al.[ModuleName]    AS [ModuleName],
             al.[ModuleName]    AS [Module]
         FROM [dbo].[AccessList] al
         INNER JOIN [dbo].[RoleWiseMenuAccess] rma ON rma.[AccessID] = al.[AccessID] AND rma.[RoleID] = @RoleId
         WHERE al.[IsActive] = 1 AND rma.[IsActive] = 1
         ORDER BY al.[ModuleID], al.[DisplayOrder];
     END
+    ELSE
+    BEGIN
+        SELECT 
+            al.[AccessID]      AS [FunctionID],
+            al.[AccessID]      AS [AccessID],
+            al.[FunctionName]  AS [FunctionName],
+            al.[NavigationURL] AS [NavigationURL],
+            al.[NavigationURL] AS [URL],
+            al.[DisplayOrder]  AS [DisplayOrder],
+            al.[DisplayOrder]  AS [SortOrder],
+            al.[MenuID]        AS [MenuID],
+            al.[ModuleID]      AS [ModuleID],
+            al.[ModuleName]    AS [ModuleName],
+            al.[ModuleName]    AS [Module]
+        FROM [dbo].[AccessList] al
+        WHERE 1 = 0;
+    END
+END;
+GO
+
+-- [dbo].[AccessValidate]
+-- Validates whether a user has access to any of the specified comma-separated AccessIDs
+CREATE OR ALTER PROCEDURE [dbo].[AccessValidate]
+(
+    @LoginID        NVARCHAR(50),
+    @AccessIDList   NVARCHAR(MAX)
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SET @LoginID = LTRIM(RTRIM(@LoginID));
+
+    DECLARE @RoleId INT = NULL;
+    DECLARE @RoleName NVARCHAR(100) = NULL;
+
+    SELECT TOP 1 @RoleName = [RoleName] 
+    FROM [dbo].[Users] 
+    WHERE LOWER(LTRIM(RTRIM([UserName]))) = LOWER(@LoginID)
+       OR LOWER(LTRIM(RTRIM([LoginID])))  = LOWER(@LoginID);
+
+    IF @RoleName IS NOT NULL
+    BEGIN
+        SELECT TOP 1 @RoleId = [RoleId] 
+        FROM [dbo].[UserRoles] 
+        WHERE LOWER(LTRIM(RTRIM([RoleName]))) = LOWER(LTRIM(RTRIM(@RoleName))) AND [IsActive] = 1;
+    END
+
+    IF @RoleId IS NOT NULL
+    BEGIN
+        IF EXISTS (
+            SELECT 1
+            FROM STRING_SPLIT(@AccessIDList, ',') s
+            INNER JOIN [dbo].[RoleWiseMenuAccess] rma 
+                ON rma.[AccessID] = TRY_CAST(LTRIM(RTRIM(s.[value])) AS INT)
+            WHERE rma.[RoleID] = @RoleId AND rma.[IsActive] = 1
+        )
+        BEGIN
+            SELECT 1 AS [HasAccess];
+            RETURN;
+        END
+    END
+
+    SELECT 0 AS [HasAccess] WHERE 1 = 0;
 END;
 GO
 
@@ -557,6 +625,11 @@ BEGIN
         i.[Status],
         i.[TotalAmount],
         i.[Notes],
+        i.[SignedBy],
+        i.[SignedAt],
+        i.[SignatureData],
+        i.[FinanceReviewNotes],
+        ISNULL(i.[Currency], 'LKR') AS [Currency],
         i.[CreatedAt]
     FROM [dbo].[Invoices] i
     ORDER BY i.[CreatedAt] DESC;
@@ -850,5 +923,259 @@ BEGIN
     );
 
     SELECT @RoleID AS [RoleID], @MenuID AS [AccessID], 'Role menu access updated successfully' AS [Message];
+END;
+GO
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- 8. NOTIFICATIONS & INVOICING WORKFLOW PROCEDURES
+-- ────────────────────────────────────────────────────────────────────────────
+
+-- [dbo].[Create_Notification]
+CREATE OR ALTER PROCEDURE [dbo].[Create_Notification]
+(
+    @UserID           NVARCHAR(100),
+    @TargetRole       NVARCHAR(100) = NULL,
+    @SenderUser       NVARCHAR(100) = NULL,
+    @Title            NVARCHAR(150),
+    @Message          NVARCHAR(500),
+    @NotificationType VARCHAR(50) = 'InvoiceRequest',
+    @ReferenceID      NVARCHAR(100) = NULL,
+    @Priority         VARCHAR(20) = 'NORMAL'
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    INSERT INTO [dbo].[Notifications]
+    (
+        [UserID], [TargetRole], [SenderUser], [Title], [Message],
+        [NotificationType], [ReferenceID], [Priority], [IsRead], [CreatedAt]
+    )
+    VALUES
+    (
+        @UserID, @TargetRole, @SenderUser, @Title, @Message,
+        @NotificationType, @ReferenceID, @Priority, 0, GETDATE()
+    );
+
+    SELECT SCOPE_IDENTITY() AS [NotificationID], 'Notification created successfully' AS [Message];
+END;
+GO
+
+-- [dbo].[Get_User_Notifications]
+CREATE OR ALTER PROCEDURE [dbo].[Get_User_Notifications]
+(
+    @UserName NVARCHAR(100),
+    @RoleName NVARCHAR(100) = NULL
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    SELECT TOP 50
+        n.[NotificationID]   AS [id],
+        n.[NotificationID]   AS [notificationId],
+        n.[UserID]           AS [userId],
+        n.[TargetRole]       AS [targetRole],
+        n.[SenderUser]       AS [senderUser],
+        n.[Title]            AS [title],
+        n.[Message]          AS [message],
+        n.[NotificationType] AS [notificationType],
+        n.[ReferenceID]      AS [referenceId],
+        n.[Priority]         AS [priority],
+        n.[IsRead]           AS [isRead],
+        n.[CreatedAt]        AS [createdAt],
+        n.[ReadAt]           AS [readAt]
+    FROM [dbo].[Notifications] n
+    WHERE n.[UserID] = @UserName 
+       OR n.[UserID] = 'ALL'
+       OR (@RoleName IS NOT NULL AND n.[TargetRole] = @RoleName)
+    ORDER BY n.[CreatedAt] DESC;
+
+    SELECT COUNT(1) AS [UnreadCount]
+    FROM [dbo].[Notifications] n
+    WHERE n.[IsRead] = 0
+      AND (
+          n.[UserID] = @UserName 
+          OR n.[UserID] = 'ALL'
+          OR (@RoleName IS NOT NULL AND n.[TargetRole] = @RoleName)
+      );
+END;
+GO
+
+-- [dbo].[Mark_Notification_Read]
+CREATE OR ALTER PROCEDURE [dbo].[Mark_Notification_Read]
+(
+    @NotificationID BIGINT
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE [dbo].[Notifications]
+    SET [IsRead] = 1,
+        [ReadAt] = GETDATE()
+    WHERE [NotificationID] = @NotificationID;
+
+    SELECT @NotificationID AS [NotificationID], 'Notification marked as read' AS [Message];
+END;
+GO
+
+-- [dbo].[Mark_All_Notifications_Read]
+CREATE OR ALTER PROCEDURE [dbo].[Mark_All_Notifications_Read]
+(
+    @UserName NVARCHAR(100),
+    @RoleName NVARCHAR(100) = NULL
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE [dbo].[Notifications]
+    SET [IsRead] = 1,
+        [ReadAt] = GETDATE()
+    WHERE [IsRead] = 0
+      AND (
+          [UserID] = @UserName 
+          OR [UserID] = 'ALL'
+          OR (@RoleName IS NOT NULL AND [TargetRole] = @RoleName)
+      );
+
+    SELECT @@ROWCOUNT AS [UpdatedCount], 'All notifications marked as read' AS [Message];
+END;
+GO
+
+-- [dbo].[Request_Invoice_Signature]
+CREATE OR ALTER PROCEDURE [dbo].[Request_Invoice_Signature]
+(
+    @InvoiceId        INT,
+    @RequestedBy      NVARCHAR(100),
+    @Notes            NVARCHAR(MAX) = NULL,
+    @IPAddress        VARCHAR(50)   = NULL
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @InvoiceNumber NVARCHAR(50);
+    DECLARE @CustomerName NVARCHAR(100);
+    DECLARE @TotalAmount DECIMAL(18,2);
+
+    SELECT 
+        @InvoiceNumber = [InvoiceNumber],
+        @CustomerName  = [CustomerName],
+        @TotalAmount   = [TotalAmount]
+    FROM [dbo].[Invoices]
+    WHERE [Id] = @InvoiceId;
+
+    IF @InvoiceNumber IS NULL
+    BEGIN
+        SELECT 0 AS [Success], 'Invoice not found.' AS [Message];
+        RETURN;
+    END
+
+    UPDATE [dbo].[Invoices]
+    SET [Status] = 'Awaiting Signature',
+        [FinanceReviewNotes] = @Notes
+    WHERE [Id] = @InvoiceId;
+
+    INSERT INTO [dbo].[AuditTrails] ([Timestamp], [UserName], [Action], [Module], [Details], [IpAddress])
+    VALUES (
+        GETDATE(),
+        @RequestedBy,
+        'REQUEST_SIGNATURE',
+        'INVOICES',
+        CONCAT('Finance Manager requested signature for Invoice ', @InvoiceNumber, ' (', @CustomerName, '). Notes: ', ISNULL(@Notes, 'None')),
+        @IPAddress
+    );
+
+    INSERT INTO [dbo].[Notifications]
+    (
+        [UserID], [TargetRole], [SenderUser], [Title], [Message],
+        [NotificationType], [ReferenceID], [Priority], [IsRead], [CreatedAt]
+    )
+    VALUES
+    (
+        'Billing Officer',
+        'Billing Officer',
+        @RequestedBy,
+        CONCAT('Signature Requested: ', @InvoiceNumber),
+        CONCAT('Finance Manager ', @RequestedBy, ' has requested your signature for invoice ', @InvoiceNumber, ' (', @CustomerName, ', Amount: ', @TotalAmount, ').'),
+        'InvoiceSignatureRequest',
+        @InvoiceNumber,
+        'HIGH',
+        0,
+        GETDATE()
+    );
+
+    SELECT 1 AS [Success], 'Signature request sent to Billing Officer.' AS [Message], @InvoiceNumber AS [InvoiceNumber];
+END;
+GO
+
+-- [dbo].[Sign_Invoice]
+CREATE OR ALTER PROCEDURE [dbo].[Sign_Invoice]
+(
+    @InvoiceId        INT,
+    @SignedBy         NVARCHAR(100),
+    @SignatureData    NVARCHAR(MAX) = NULL,
+    @IPAddress        VARCHAR(50)   = NULL
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @InvoiceNumber NVARCHAR(50);
+    DECLARE @CustomerName NVARCHAR(100);
+    DECLARE @TotalAmount DECIMAL(18,2);
+
+    SELECT 
+        @InvoiceNumber = [InvoiceNumber],
+        @CustomerName  = [CustomerName],
+        @TotalAmount   = [TotalAmount]
+    FROM [dbo].[Invoices]
+    WHERE [Id] = @InvoiceId;
+
+    IF @InvoiceNumber IS NULL
+    BEGIN
+        SELECT 0 AS [Success], 'Invoice not found.' AS [Message];
+        RETURN;
+    END
+
+    UPDATE [dbo].[Invoices]
+    SET [Status] = 'Signed & Ready',
+        [SignedBy] = @SignedBy,
+        [SignedAt] = GETDATE(),
+        [SignatureData] = @SignatureData
+    WHERE [Id] = @InvoiceId;
+
+    INSERT INTO [dbo].[AuditTrails] ([Timestamp], [UserName], [Action], [Module], [Details], [IpAddress])
+    VALUES (
+        GETDATE(),
+        @SignedBy,
+        'SIGN_INVOICE',
+        'INVOICES',
+        CONCAT('Billing Officer signed invoice ', @InvoiceNumber, ' for ', @CustomerName),
+        @IPAddress
+    );
+
+    INSERT INTO [dbo].[Notifications]
+    (
+        [UserID], [TargetRole], [SenderUser], [Title], [Message],
+        [NotificationType], [ReferenceID], [Priority], [IsRead], [CreatedAt]
+    )
+    VALUES
+    (
+        'Finance Manager',
+        'Finance Manager',
+        @SignedBy,
+        CONCAT('Invoice Signed: ', @InvoiceNumber),
+        CONCAT('Billing Officer ', @SignedBy, ' has signed invoice ', @InvoiceNumber, ' (', @CustomerName, '). Ready for printing & client distribution.'),
+        'InvoiceSigned',
+        @InvoiceNumber,
+        'NORMAL',
+        0,
+        GETDATE()
+    );
+
+    SELECT 1 AS [Success], 'Invoice signed and ready for printing.' AS [Message], @InvoiceNumber AS [InvoiceNumber];
 END;
 GO

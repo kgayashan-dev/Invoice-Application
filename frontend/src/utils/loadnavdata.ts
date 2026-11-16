@@ -1,6 +1,7 @@
 // utils/loadnavdata.ts
 // Finnect Digital Architecture: Dynamic navigation and access loader
 import { getApiBaseUrl } from "@/app/login/action";
+import { getAuthHeaders, getStoredUser } from "@/utils/auth";
 
 export interface SystemFunctionAccess {
   FunctionID: number;
@@ -21,13 +22,20 @@ export const fetchMenuData = async (
 ): Promise<{ success: boolean; data?: SystemFunctionAccess[]; error?: string }> => {
   try {
     const apiUrl = getApiBaseUrl();
+    const user = typeof window !== "undefined" ? getStoredUser() : null;
+    const authHeaders = getAuthHeaders();
+
     const response = await fetch(`${apiUrl}/api/Auth/GetMenuID`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...authHeaders,
       },
       cache: "no-store",
-      body: JSON.stringify({ menuId }),
+      body: JSON.stringify({
+        menuId,
+        loginID: user?.loginID || user?.userName || "",
+      }),
       credentials: "include",
     });
 

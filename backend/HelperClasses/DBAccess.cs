@@ -114,4 +114,9 @@ public class DBAccess
         da.Fill(ds);
         return ds;
     }
+
+    public async Task<DataSet> GetDataSetAsync(string storedProcName, SqlParameter[]? parameters = null)
+    {
+        return await Task.Run(() => GetDataSet(storedProcName, parameters));
+    }
 }

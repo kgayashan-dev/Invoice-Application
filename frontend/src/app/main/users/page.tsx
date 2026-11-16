@@ -23,6 +23,7 @@ import FormDialog from "@/components/dialogs/FormDialog";
 import ConfirmDialog from "@/components/dialogs/ConfirmDialog";
 import FormField from "@/components/forms/FormField";
 import TextInput from "@/components/forms/TextInput";
+import AuthGuardAccess from "@/components/AuthGuardAccess";
 import { getApiBaseUrl } from "@/app/login/action";
 import { getInitials, getAuthHeaders } from "@/utils/auth";
 
@@ -309,7 +310,8 @@ export default function UsersPage() {
   ];
 
   return (
-    <PageShell>
+    <AuthGuardAccess requiredPermission={1002}>
+      <PageShell>
       {/* Dark Page Header */}
       <DarkPageHeader
         icon={<Users className="w-4 h-4 text-cyan-400" />}
@@ -491,5 +493,6 @@ export default function UsersPage() {
         isLoading={lockLoading}
       />
     </PageShell>
+    </AuthGuardAccess>
   );
 }

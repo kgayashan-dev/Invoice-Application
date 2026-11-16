@@ -15,6 +15,22 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // Register DBAccess for Stored Procedure execution (matching My HR architecture)
 builder.Services.AddScoped<DBAccess>();
 
+// Register Session (required for auth)
+builder.Services.AddDistributedMemoryCache();
+builder.Services.AddSession(options =>
+{
+    options.IdleTimeout = TimeSpan.FromHours(8);
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+    options.Cookie.Name = ".InvoiceApp.Session";
+    options.Cookie.SameSite = SameSiteMode.Lax;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+});
+
+// Register IHttpContextAccessor
+builder.Services.AddHttpContextAccessor();
+
+
 // Add CORS policy for Frontend
 builder.Services.AddCors(options =>
 {
@@ -78,7 +94,7 @@ app.UseSwaggerUI(c =>
 });
 
 app.UseCors("AllowFrontend");
-
+app.UseSession();
 app.UseAuthorization();
 
 app.MapControllers();

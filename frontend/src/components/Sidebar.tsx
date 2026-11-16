@@ -98,27 +98,7 @@ export default function Sidebar({ fullName, userName, role }: SidebarProps) {
       });
     }
 
-    // Default static items if permissions still loading
     if (!permissions || permissions.length === 0) {
-      groups.push(
-        {
-          sectionTitle: "Invoicing",
-          items: [
-            { label: "Invoices", href: "/main/invoices", icon: <FileText className="w-4 h-4" />, accessId: 8001, displayOrder: 1 },
-          ],
-        },
-        {
-          sectionTitle: "Administration",
-          items: [
-            { label: "Users", href: "/main/users", icon: <Users className="w-4 h-4" />, accessId: 1002, displayOrder: 2 },
-            { label: "Role Permissions", href: "/main/admin/role-access", icon: <ShieldCheck className="w-4 h-4" />, accessId: 1004, displayOrder: 3 },
-            { label: "User Roles", href: "/main/admin/roles", icon: <Shield className="w-4 h-4" />, accessId: 1008, displayOrder: 4 },
-            { label: "Assign Roles", href: "/main/admin/assign-roles", icon: <UserCheck className="w-4 h-4" />, accessId: 1005, displayOrder: 5 },
-            { label: "Audit Trail", href: "/main/audit", icon: <History className="w-4 h-4" />, accessId: 2001, displayOrder: 6 },
-            { label: "Settings", href: "/main/settings", icon: <Settings className="w-4 h-4" />, accessId: 3001, displayOrder: 7 },
-          ],
-        }
-      );
       return groups;
     }
 

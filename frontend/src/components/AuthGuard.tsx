@@ -13,34 +13,39 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
     if (!user || (!user.userName && !user.fullName)) {
       clearStoredUser();
-      window.location.href = "/login";
+      window.location.replace("/login");
       return;
     }
 
-    // Immediately grant access if valid user data exists locally
-    setIsAuthenticated(true);
-
-    // Asynchronously ping backend to check session health without kicking out on transient errors
     checkAuthentication()
       .then((isAlive) => {
         if (!isMounted) return;
         if (!isAlive) {
-          console.warn("[AuthGuard] Backend authentication status check failed.");
+          clearStoredUser();
+          setIsAuthenticated(false);
+          window.location.replace("/login");
+          return;
         }
+
+        setIsAuthenticated(true);
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!isMounted) return;
+        // On network failure if user already has local credentials, keep session alive
+        setIsAuthenticated(true);
+      });
 
     return () => {
       isMounted = false;
     };
   }, []);
 
-  if (isAuthenticated === null) {
+  if (isAuthenticated === null || !isAuthenticated) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-800">
         <div className="flex flex-col items-center gap-3">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-500" />
-          <p className="text-sm text-slate-400 font-medium">Verifying session...</p>
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+          <p className="text-sm text-slate-500 font-medium">Verifying session...</p>
         </div>
       </div>
     );

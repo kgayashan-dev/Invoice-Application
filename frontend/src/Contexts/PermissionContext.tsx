@@ -15,7 +15,7 @@ interface PermissionContextType {
 
 const PermissionContext = createContext<PermissionContextType>({
   permissions: [],
-  hasPermission: () => true, // default permissive before check
+  hasPermission: () => false,
   loading: true,
   refreshPermissions: async () => {},
 });
@@ -46,6 +46,12 @@ export const PermissionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           localStorage.setItem("userPermissions", JSON.stringify(result.data));
           window.dispatchEvent(new CustomEvent("permissionsUpdated", { detail: result.data }));
         }
+      } else {
+        // If unauthorized or failed, clear permissions
+        setPermissions([]);
+        if (typeof window !== "undefined") {
+          localStorage.removeItem("userPermissions");
+        }
       }
     } catch (err) {
       console.error("[PermissionContext] Exception during loadPermissions:", err);
@@ -71,12 +77,37 @@ export const PermissionProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const handleFocus = () => {
       void loadPermissions();
     };
+    const handlePermissionsUpdated = (e: Event) => {
+      const customEvent = e as CustomEvent<SystemFunctionAccess[]>;
+      if (customEvent.detail) {
+        setPermissions(customEvent.detail);
+      }
+    };
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === "userPermissions") {
+        if (!e.newValue) {
+          setPermissions([]);
+        } else {
+          try {
+            setPermissions(JSON.parse(e.newValue));
+          } catch {
+            setPermissions([]);
+          }
+        }
+      }
+    };
+
     window.addEventListener("focus", handleFocus);
-    return () => window.removeEventListener("focus", handleFocus);
+    window.addEventListener("permissionsUpdated", handlePermissionsUpdated);
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("permissionsUpdated", handlePermissionsUpdated);
+      window.removeEventListener("storage", handleStorage);
+    };
   }, [loadPermissions]);
 
   const hasPermission = (permissionId: number): boolean => {
-    if (!permissions.length) return true; // If permissions not loaded, allow access
     return permissions.some((perm) => {
       const p = perm as unknown as Record<string, unknown>;
       const id = p.FunctionID ?? p.functionID ?? p.AccessID ?? p.accessID;

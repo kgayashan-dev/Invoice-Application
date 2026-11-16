@@ -8,6 +8,7 @@ import PageToolbar from "@/components/layout/PageToolbar";
 import DataTable, { ColumnDef } from "@/components/data/DataTable";
 import AppAlert from "@/components/feedback/AppAlert";
 import FormDialog from "@/components/dialogs/FormDialog";
+import AuthGuardAccess from "@/components/AuthGuardAccess";
 import { getApiBaseUrl } from "@/app/login/action";
 import { getInitials, getAuthHeaders } from "@/utils/auth";
 
@@ -143,7 +144,8 @@ export default function AssignRolesPage() {
   ];
 
   return (
-    <PageShell>
+    <AuthGuardAccess requiredPermission={1005}>
+      <PageShell>
       <DarkPageHeader
         icon={<UserCheck className="w-4 h-4 text-cyan-400" />}
         breadcrumbs={["Home", "Administration", "Assign Roles"]}
@@ -211,5 +213,6 @@ export default function AssignRolesPage() {
         </div>
       </FormDialog>
     </PageShell>
+    </AuthGuardAccess>
   );
 }

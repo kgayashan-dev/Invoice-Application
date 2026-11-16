@@ -231,7 +231,7 @@ export default function LoginComponent() {
           if (loginId) localStorage.setItem("loginID", loginId);
 
           const targetUrl = getPostLoginUrl();
-          console.log(`[Login] Success. Redirecting to ${targetUrl}`);
+          // console.log(`[Login] Success. Redirecting to ${targetUrl}`);
           window.location.href = targetUrl;
           return;
         } else {

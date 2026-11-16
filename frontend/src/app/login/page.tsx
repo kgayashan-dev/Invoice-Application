@@ -3,6 +3,8 @@ import LoginComponent from "./LoginComponent";
 
 export default function LoginPage() {
   return (
+
+    // suspense is used for  
     <Suspense
       fallback={
         <div className="min-h-screen flex items-center justify-center bg-slate-950">

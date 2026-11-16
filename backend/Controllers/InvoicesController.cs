@@ -60,6 +60,11 @@ public class InvoicesController : ControllerBase
                 status = row["Status"]?.ToString(),
                 totalAmount = Convert.ToDecimal(row["TotalAmount"]),
                 notes = row["Notes"]?.ToString(),
+                signedBy = row["SignedBy"] != DBNull.Value ? row["SignedBy"]?.ToString() : null,
+                signedAt = row["SignedAt"] != DBNull.Value ? Convert.ToDateTime(row["SignedAt"]) : (DateTime?)null,
+                signatureData = row["SignatureData"] != DBNull.Value ? row["SignatureData"]?.ToString() : null,
+                financeReviewNotes = row["FinanceReviewNotes"] != DBNull.Value ? row["FinanceReviewNotes"]?.ToString() : null,
+                currency = row["Currency"] != DBNull.Value ? row["Currency"]?.ToString() : "LKR",
                 createdAt = row["CreatedAt"] != DBNull.Value ? Convert.ToDateTime(row["CreatedAt"]) : (DateTime?)null,
                 items = itemsLookup.ContainsKey(invId) ? itemsLookup[invId] : new List<object>()
             });
@@ -248,5 +253,77 @@ public class InvoicesController : ControllerBase
 
         await _dba.ExecuteCommandAsync("[dbo].[Delete_Invoice]", spParams);
         return NoContent();
+    }
+
+    public class RequestSignatureDto
+    {
+        public string? Notes { get; set; }
+    }
+
+    [HttpPost("{id}/request-signature")]
+    public async Task<IActionResult> RequestSignature(int id, [FromBody] RequestSignatureDto? dto)
+    {
+        var operatorUser = HttpContext.Session.GetString("UserName")
+                        ?? Request.Headers["X-UserName"].FirstOrDefault()
+                        ?? "Finance Manager";
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+
+        var spParams = new[]
+        {
+            new SqlParameter("@InvoiceId", SqlDbType.Int) { Value = id },
+            new SqlParameter("@RequestedBy", SqlDbType.NVarChar, 100) { Value = operatorUser },
+            new SqlParameter("@Notes", SqlDbType.NVarChar, -1) { Value = (object?)dto?.Notes ?? DBNull.Value },
+            new SqlParameter("@IPAddress", SqlDbType.VarChar, 50) { Value = ipAddress }
+        };
+
+        var dt = await _dba.GetDataAsync("[dbo].[Request_Invoice_Signature]", spParams);
+        if (dt != null && dt.Rows.Count > 0 && Convert.ToInt32(dt.Rows[0]["Success"]) == 1)
+        {
+            return Ok(new
+            {
+                success = true,
+                message = dt.Rows[0]["Message"]?.ToString(),
+                invoiceNumber = dt.Rows[0]["InvoiceNumber"]?.ToString()
+            });
+        }
+
+        return BadRequest(new { success = false, message = "Could not request signature." });
+    }
+
+    public class SignInvoiceDto
+    {
+        public string? SignatureData { get; set; }
+    }
+
+    [HttpPost("{id}/sign")]
+    public async Task<IActionResult> SignInvoice(int id, [FromBody] SignInvoiceDto? dto)
+    {
+        var operatorUser = HttpContext.Session.GetString("FullName")
+                        ?? HttpContext.Session.GetString("UserName")
+                        ?? Request.Headers["X-UserName"].FirstOrDefault()
+                        ?? "Billing Officer";
+        var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+
+        var spParams = new[]
+        {
+            new SqlParameter("@InvoiceId", SqlDbType.Int) { Value = id },
+            new SqlParameter("@SignedBy", SqlDbType.NVarChar, 100) { Value = operatorUser },
+            new SqlParameter("@SignatureData", SqlDbType.NVarChar, -1) { Value = (object?)dto?.SignatureData ?? DBNull.Value },
+            new SqlParameter("@IPAddress", SqlDbType.VarChar, 50) { Value = ipAddress }
+        };
+
+        var dt = await _dba.GetDataAsync("[dbo].[Sign_Invoice]", spParams);
+        if (dt != null && dt.Rows.Count > 0 && Convert.ToInt32(dt.Rows[0]["Success"]) == 1)
+        {
+            return Ok(new
+            {
+                success = true,
+                message = dt.Rows[0]["Message"]?.ToString(),
+                signedBy = operatorUser,
+                signedAt = DateTime.UtcNow
+            });
+        }
+
+        return BadRequest(new { success = false, message = "Could not sign invoice." });
     }
 }

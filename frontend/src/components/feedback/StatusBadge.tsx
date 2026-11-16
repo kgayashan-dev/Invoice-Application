@@ -40,6 +40,8 @@ export function StatusBadge({
   if (
     lower === "active" ||
     lower === "approved" ||
+    lower === "signed & ready" ||
+    lower === "signed" ||
     lower === "finalized" ||
     lower === "completed" ||
     lower === "paid" ||
@@ -53,6 +55,8 @@ export function StatusBadge({
   } else if (
     lower === "pending" ||
     lower === "draft" ||
+    lower === "awaiting signature" ||
+    lower === "signature requested" ||
     lower === "in progress" ||
     lower === "processing" ||
     lower === "submitted" ||

@@ -14,9 +14,14 @@ export interface Invoice {
   customerEmail: string;
   issueDate: string;
   dueDate: string;
-  status: 'Draft' | 'Pending' | 'Paid' | 'Overdue' | 'Cancelled';
+  status: 'Draft' | 'Pending' | 'Awaiting Signature' | 'Signed & Ready' | 'Paid' | 'Overdue' | 'Cancelled' | string;
   totalAmount: number;
   notes?: string;
+  signedBy?: string | null;
+  signedAt?: string | null;
+  signatureData?: string | null;
+  financeReviewNotes?: string | null;
+  currency?: string | null;
   createdAt?: string;
   items: InvoiceItem[];
 }

@@ -7,6 +7,7 @@ import PageShell from "@/components/layout/PageShell";
 import PageToolbar from "@/components/layout/PageToolbar";
 import DataTable, { ColumnDef } from "@/components/data/DataTable";
 import StatusBadge from "@/components/feedback/StatusBadge";
+import AuthGuardAccess from "@/components/AuthGuardAccess";
 import { getApiBaseUrl } from "@/app/login/action";
 import { getAuthHeaders } from "@/utils/auth";
 
@@ -90,7 +91,8 @@ export default function RolesPage() {
   ];
 
   return (
-    <PageShell>
+    <AuthGuardAccess requiredPermission={1008}>
+      <PageShell>
       <DarkPageHeader
         icon={<ShieldCheck className="w-4 h-4 text-cyan-400" />}
         breadcrumbs={["Home", "Administration", "User Roles"]}
@@ -118,5 +120,6 @@ export default function RolesPage() {
         />
       </div>
     </PageShell>
+    </AuthGuardAccess>
   );
 }
