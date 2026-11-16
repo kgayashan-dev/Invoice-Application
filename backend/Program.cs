@@ -2,6 +2,13 @@ using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using backend.Data;
 using backend.HelperClasses;
+using backend.Services;
+using QuestPDF.Infrastructure;
+
+// Configure QuestPDF Community License & Fonts
+QuestPDF.Settings.License = LicenseType.Community;
+QuestPDF.Settings.UseSystemFonts = true;
+QuestPDF.Settings.ThrowOnMissingFontFamilies = false;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,6 +21,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 // Register DBAccess for Stored Procedure execution (matching My HR architecture)
 builder.Services.AddScoped<DBAccess>();
+builder.Services.AddScoped<ExcelExportService>();
 
 // Register Session (required for auth)
 builder.Services.AddDistributedMemoryCache();

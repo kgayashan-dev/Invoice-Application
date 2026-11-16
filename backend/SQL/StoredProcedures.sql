@@ -1179,3 +1179,90 @@ BEGIN
     SELECT 1 AS [Success], 'Invoice signed and ready for printing.' AS [Message], @InvoiceNumber AS [InvoiceNumber];
 END;
 GO
+
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- 10. APP ASSETS (LOGOS & SIGNATURES) AND EXTENDED INVOICE PROCEDURES
+-- ────────────────────────────────────────────────────────────────────────────
+
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'AppAssets')
+BEGIN
+    CREATE TABLE [dbo].[AppAssets] (
+        [Id] INT IDENTITY(1,1) PRIMARY KEY,
+        [AssetType] NVARCHAR(50) NOT NULL,
+        [Name] NVARCHAR(200) NOT NULL,
+        [FileName] NVARCHAR(250) NOT NULL,
+        [ContentType] NVARCHAR(100) NOT NULL,
+        [ImageData] NVARCHAR(MAX) NOT NULL,
+        [IsDefault] BIT NOT NULL DEFAULT 0,
+        [UploadedBy] NVARCHAR(100) NOT NULL,
+        [CreatedAt] DATETIME2 NOT NULL DEFAULT GETDATE()
+    );
+END
+GO
+
+CREATE OR ALTER PROCEDURE [dbo].[Get_App_Assets]
+(
+    @AssetType NVARCHAR(50) = NULL
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT [Id], [AssetType], [Name], [FileName], [ContentType], [ImageData], [IsDefault], [UploadedBy], [CreatedAt]
+    FROM [dbo].[AppAssets]
+    WHERE (@AssetType IS NULL OR [AssetType] = @AssetType)
+    ORDER BY [IsDefault] DESC, [CreatedAt] DESC;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE [dbo].[Insert_App_Asset]
+(
+    @AssetType   NVARCHAR(50),
+    @Name        NVARCHAR(200),
+    @FileName    NVARCHAR(250),
+    @ContentType NVARCHAR(100),
+    @ImageData   NVARCHAR(MAX),
+    @IsDefault   BIT = 0,
+    @UploadedBy  NVARCHAR(100)
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    IF @IsDefault = 1
+    BEGIN
+        UPDATE [dbo].[AppAssets] SET [IsDefault] = 0 WHERE [AssetType] = @AssetType;
+    END
+
+    INSERT INTO [dbo].[AppAssets] ([AssetType], [Name], [FileName], [ContentType], [ImageData], [IsDefault], [UploadedBy], [CreatedAt])
+    VALUES (@AssetType, @Name, @FileName, @ContentType, @ImageData, @IsDefault, @UploadedBy, GETDATE());
+
+    SELECT SCOPE_IDENTITY() AS [AssetId];
+END;
+GO
+
+CREATE OR ALTER PROCEDURE [dbo].[Delete_App_Asset]
+(
+    @Id INT
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DELETE FROM [dbo].[AppAssets] WHERE [Id] = @Id;
+    SELECT 1 AS [Success];
+END;
+GO
+
+CREATE OR ALTER PROCEDURE [dbo].[Set_Default_App_Asset]
+(
+    @Id INT,
+    @AssetType NVARCHAR(50)
+)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE [dbo].[AppAssets] SET [IsDefault] = 0 WHERE [AssetType] = @AssetType;
+    UPDATE [dbo].[AppAssets] SET [IsDefault] = 1 WHERE [Id] = @Id;
+    SELECT 1 AS [Success];
+END;
+GO

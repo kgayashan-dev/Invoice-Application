@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Eye,
   FileCheck2,
+  FileSpreadsheet,
 } from "lucide-react";
 import DarkPageHeader from "@/components/DarkPageHeader";
 import PageShell from "@/components/layout/PageShell";
@@ -20,10 +21,7 @@ import PageToolbar from "@/components/layout/PageToolbar";
 import DataTable, { ColumnDef } from "@/components/data/DataTable";
 import StatusBadge from "@/components/feedback/StatusBadge";
 import AppAlert from "@/components/feedback/AppAlert";
-import FormDialog from "@/components/dialogs/FormDialog";
 import ConfirmDialog from "@/components/dialogs/ConfirmDialog";
-import FormField from "@/components/forms/FormField";
-import TextInput from "@/components/forms/TextInput";
 import AuthGuardAccess from "@/components/AuthGuardAccess";
 import { useCurrency } from "@/Contexts/CurrencyContext";
 import { getStoredUser } from "@/utils/auth";
@@ -34,9 +32,11 @@ import {
   deleteInvoice,
   requestInvoiceSignature,
   signInvoice,
+  downloadAllInvoicesExcel,
 } from "@/services/api";
 import InvoicePrintModal from "@/components/invoices/InvoicePrintModal";
 import RequestSignatureModal from "@/components/invoices/RequestSignatureModal";
+import InvoiceFormModal from "@/components/invoices/InvoiceFormModal";
 
 export default function InvoicesPage() {
   const searchParams = useSearchParams();
@@ -53,15 +53,7 @@ export default function InvoicesPage() {
   const [printTarget, setPrintTarget] = useState<Invoice | null>(null);
   const [requestSignTarget, setRequestSignTarget] = useState<Invoice | null>(null);
   const [isSubmittingWorkflow, setIsSubmittingWorkflow] = useState(false);
-
-  // Form State
-  const [customerName, setCustomerName] = useState("");
-  const [customerEmail, setCustomerEmail] = useState("");
-  const [status, setStatus] = useState<"Draft" | "Pending" | "Paid">("Pending");
-  const [itemDesc, setItemDesc] = useState("Professional Services");
-  const [itemQty, setItemQty] = useState(1);
-  const [itemPrice, setItemPrice] = useState(250);
-  const [submitting, setSubmitting] = useState(false);
+  const [isExportingAll, setIsExportingAll] = useState(false);
 
   // User identity
   const user = typeof window !== "undefined" ? getStoredUser() : null;
@@ -108,35 +100,16 @@ export default function InvoicesPage() {
     void fetchInvoices();
   }, []);
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
+  const handleCreate = async (invoiceData: Partial<Invoice>) => {
     try {
-      await createInvoice({
-        customerName,
-        customerEmail,
-        status,
-        currency: currency,
-        items: [
-          {
-            description: itemDesc,
-            quantity: Number(itemQty),
-            unitPrice: Number(itemPrice),
-          },
-        ],
+      await createInvoice(invoiceData);
+      setMessage({
+        text: `Invoice #${invoiceData.invoiceNumber} created successfully!`,
+        type: "success",
       });
-      setMessage({ text: "Invoice created successfully via Stored Procedure.", type: "success" });
-      setIsModalOpen(false);
-      setCustomerName("");
-      setCustomerEmail("");
       await fetchInvoices();
     } catch (err: unknown) {
-      setMessage({
-        text: err instanceof Error ? err.message : "Failed to create invoice.",
-        type: "error",
-      });
-    } finally {
-      setSubmitting(false);
+      throw err;
     }
   };
 
@@ -160,13 +133,12 @@ export default function InvoicesPage() {
     try {
       const res = await requestInvoiceSignature(invoiceId, notes);
       setMessage({
-        text: res.message || "Signature request sent to Billing Officer.",
+        text: `Signature requested for invoice #${res.invoiceNumber}. Billing Officer has been notified.`,
         type: "success",
       });
       setRequestSignTarget(null);
-      window.dispatchEvent(new CustomEvent("notificationsUpdated"));
       await fetchInvoices();
-    } catch (err) {
+    } catch (err: unknown) {
       setMessage({
         text: err instanceof Error ? err.message : "Failed to request signature.",
         type: "error",
@@ -176,105 +148,126 @@ export default function InvoicesPage() {
     }
   };
 
-  const handleSignInvoice = async (invoiceId: number, signatureData: string) => {
+  const handleSignInvoice = async (invoiceId: number, signatureData: string, signatureId?: number) => {
+    setIsSubmittingWorkflow(true);
     try {
-      const res = await signInvoice(invoiceId, signatureData);
+      const res = await signInvoice(invoiceId, signatureData, signatureId);
       setMessage({
-        text: res.message || "Invoice signed and verified successfully.",
+        text: `Invoice signed and certified by ${res.signedBy}. Ready for printing & client distribution.`,
         type: "success",
       });
-      window.dispatchEvent(new CustomEvent("notificationsUpdated"));
+      setPrintTarget(null);
       await fetchInvoices();
-      if (printTarget && printTarget.id === invoiceId) {
-        setPrintTarget((prev) =>
-          prev
-            ? {
-                ...prev,
-                status: "Signed & Ready",
-                signedBy: res.signedBy || user?.fullName || user?.userName || "Billing Officer",
-                signedAt: new Date().toISOString(),
-                signatureData,
-              }
-            : null
-        );
-      }
-    } catch (err) {
+    } catch (err: unknown) {
       setMessage({
         text: err instanceof Error ? err.message : "Failed to sign invoice.",
         type: "error",
       });
+    } finally {
+      setIsSubmittingWorkflow(false);
+    }
+  };
+
+  const handleExportAllReport = async () => {
+    setIsExportingAll(true);
+    try {
+      await downloadAllInvoicesExcel();
+    } catch (err: unknown) {
+      setMessage({
+        text: err instanceof Error ? err.message : "Failed to export report.",
+        type: "error",
+      });
+    } finally {
+      setIsExportingAll(false);
     }
   };
 
   const filteredInvoices = useMemo(() => {
     return invoices.filter((inv) => {
-      const s = searchTerm.toLowerCase();
+      const q = searchTerm.toLowerCase();
       const matchesSearch =
-        inv.invoiceNumber.toLowerCase().includes(s) ||
-        inv.customerName.toLowerCase().includes(s) ||
-        (inv.customerEmail && inv.customerEmail.toLowerCase().includes(s));
+        inv.invoiceNumber.toLowerCase().includes(q) ||
+        inv.customerName.toLowerCase().includes(q) ||
+        (inv.customerEmail && inv.customerEmail.toLowerCase().includes(q)) ||
+        (inv.signedBy && inv.signedBy.toLowerCase().includes(q));
 
-      if (!matchesSearch) return false;
+      const matchesStatus =
+        statusFilter === "ALL" ||
+        inv.status.toUpperCase() === statusFilter.toUpperCase();
 
-      if (statusFilter !== "ALL") {
-        return inv.status.toUpperCase() === statusFilter;
-      }
-      return true;
+      return matchesSearch && matchesStatus;
     });
   }, [invoices, searchTerm, statusFilter]);
 
   const columns: ColumnDef<Invoice>[] = [
     {
       header: "Invoice #",
+      key: "invoiceNumber",
       cell: (row) => (
-        <div>
+        <div className="flex items-center gap-1.5">
+          <FileText className="w-4 h-4 text-slate-400" />
           <button
             type="button"
             onClick={() => setPrintTarget(row)}
-            className="font-mono font-bold text-blue-600 hover:text-blue-800 hover:underline text-xs cursor-pointer block text-left"
+            className="font-bold text-blue-600 hover:text-blue-800 text-xs font-mono hover:underline cursor-pointer"
           >
             {row.invoiceNumber}
           </button>
-          <span className="text-[10px] text-slate-400 font-mono">
-            {row.currency || currency}
-          </span>
         </div>
       ),
     },
     {
-      header: "Customer",
+      header: "Client / Entity",
+      key: "customerName",
       cell: (row) => (
-        <div className="text-xs">
-          <div className="font-semibold text-slate-900">{row.customerName}</div>
-          <div className="text-[11px] text-slate-400">{row.customerEmail || "No email"}</div>
-        </div>
-      ),
-    },
-    {
-      header: "Dates",
-      cell: (row) => (
-        <div className="text-[11px] text-slate-600 font-mono">
-          <div>Issued: {new Date(row.issueDate).toLocaleDateString()}</div>
-          <div className="text-slate-400">Due: {new Date(row.dueDate).toLocaleDateString()}</div>
-        </div>
-      ),
-    },
-    {
-      header: "Workflow Status",
-      cell: (row) => (
-        <div className="space-y-1">
-          <StatusBadge status={row.status} label={row.status} />
-          {row.signedBy && (
-            <div className="flex items-center gap-1 text-[10px] text-emerald-700 font-medium">
-              <ShieldCheck className="w-3 h-3 text-emerald-600" />
-              <span>Signed by @{row.signedBy}</span>
-            </div>
+        <div>
+          <div className="font-semibold text-slate-900 text-xs">{row.customerName}</div>
+          {row.attention && (
+            <div className="text-[11px] text-slate-400">{row.attention}</div>
           )}
         </div>
       ),
     },
     {
-      header: "Total Amount",
+      header: "Issue Date",
+      key: "issueDate",
+      cell: (row) => (
+        <span className="text-slate-600 text-xs font-mono">
+          {new Date(row.issueDate).toLocaleDateString("en-GB", {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+          })}
+        </span>
+      ),
+    },
+    {
+      header: "Status & Certification",
+      key: "status",
+      cell: (row) => {
+        const isSigned = Boolean(row.signedBy || row.status === "Signed & Ready");
+        return (
+          <div className="space-y-0.5">
+            <StatusBadge status={row.status} />
+            {isSigned && (
+              <div className="flex items-center gap-1 text-[10px] text-emerald-700 font-medium">
+                <ShieldCheck className="w-3 h-3 text-emerald-600" />
+                <span>Signed by {row.signedBy}</span>
+              </div>
+            )}
+            {row.status === "Awaiting Signature" && (
+              <div className="flex items-center gap-1 text-[10px] text-amber-700 font-medium animate-pulse">
+                <PenTool className="w-3 h-3 text-amber-600" />
+                <span>Pending Billing Officer sign</span>
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      header: "Amount",
+      key: "totalAmount",
       align: "right",
       cell: (row) => (
         <span className="font-bold text-slate-900 text-xs font-mono">
@@ -353,17 +346,31 @@ export default function InvoicesPage() {
           icon={<Receipt className="w-4 h-4 text-cyan-400" />}
           breadcrumbs={["Home", "Billing", "Invoices"]}
           pageTitle="Invoice Registry"
-          description={`Customer invoices ledger with signature workflow & dynamic currency (${currencyPrefix.trim()})`}
+          description={`Customer invoices ledger with QuestPDF A4 export & ClosedXML Excel reporting (${currencyPrefix.trim()})`}
           onRefresh={fetchInvoices}
           isRefreshing={loading}
           actions={
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Create Invoice</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleExportAllReport}
+                disabled={isExportingAll || invoices.length === 0}
+                className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-md text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                title="Export complete particulars report across all invoices to Excel"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>{isExportingAll ? "Exporting..." : "Export Report (Excel)"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(true)}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Create Invoice</span>
+              </button>
+            </div>
           }
         />
 
@@ -418,119 +425,42 @@ export default function InvoicesPage() {
           />
         </div>
 
-        {/* Create Modal */}
-        <FormDialog
+        {/* Structured Intuitive Invoice Creation Modal */}
+        <InvoiceFormModal
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
-          title="Create New Invoice"
-          subtitle={`Generate invoice header & line items in MSSQL database (Currency: ${currencyPrefix.trim()})`}
           onSubmit={handleCreate}
-          isSubmitting={submitting}
-          submitLabel="Generate Invoice"
-        >
-          <div className="space-y-3.5 py-1">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <FormField label="Customer Name" required>
-                <TextInput
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Acme Corporation"
-                  required
-                />
-              </FormField>
-
-              <FormField label="Customer Email">
-                <TextInput
-                  type="email"
-                  value={customerEmail}
-                  onChange={(e) => setCustomerEmail(e.target.value)}
-                  placeholder="billing@acme.com"
-                />
-              </FormField>
-            </div>
-
-            <FormField label="Initial Invoice Status" required>
-              <select
-                value={status}
-                onChange={(e) => setStatus(e.target.value as any)}
-                className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-              >
-                <option value="Draft">Draft</option>
-                <option value="Pending">Pending Review</option>
-                <option value="Paid">Paid</option>
-              </select>
-            </FormField>
-
-            <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-2.5">
-              <h4 className="text-xs font-bold text-slate-700">Initial Line Item</h4>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                <div className="sm:col-span-2">
-                  <TextInput
-                    value={itemDesc}
-                    onChange={(e) => setItemDesc(e.target.value)}
-                    placeholder="Service description"
-                    required
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <TextInput
-                    type="number"
-                    min="1"
-                    value={itemQty}
-                    onChange={(e) => setItemQty(Number(e.target.value))}
-                    placeholder="Qty"
-                    required
-                  />
-                  <TextInput
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={itemPrice}
-                    onChange={(e) => setItemPrice(Number(e.target.value))}
-                    placeholder={`Price (${currencyPrefix.trim()})`}
-                    required
-                  />
-                </div>
-              </div>
-              <div className="flex justify-between text-xs pt-1 border-t border-slate-200 text-slate-500">
-                <span>Item Line Total:</span>
-                <span className="font-bold text-slate-900 font-mono">
-                  {formatAmount(itemQty * itemPrice)}
-                </span>
-              </div>
-            </div>
-          </div>
-        </FormDialog>
-
-        {/* Request Signature Modal (Finance Manager -> Billing Officer) */}
-        <RequestSignatureModal
-          invoice={requestSignTarget}
-          isOpen={Boolean(requestSignTarget)}
-          onClose={() => setRequestSignTarget(null)}
-          onSubmit={handleRequestSignature}
-          isSubmitting={isSubmittingWorkflow}
-        />
-
-        {/* Printable Invoice & Digital Signature Modal */}
-        <InvoicePrintModal
-          invoice={printTarget}
-          isOpen={Boolean(printTarget)}
-          onClose={() => setPrintTarget(null)}
-          onSign={handleSignInvoice}
-          userRole={userRole}
-          userFullName={user?.fullName || ""}
-          userName={user?.userName || ""}
         />
 
         {/* Delete Confirmation */}
         <ConfirmDialog
           isOpen={Boolean(deleteTarget)}
           onClose={() => setDeleteTarget(null)}
-          onConfirm={handleDelete}
-          title="Delete Invoice"
-          message={`Are you sure you want to delete invoice ${deleteTarget?.invoiceNumber}? All associated line items and billing history will be removed.`}
-          confirmLabel="Delete Invoice"
+          title="Delete Invoice Record"
+          message={`Are you sure you want to permanently delete invoice ${deleteTarget?.invoiceNumber}? This action cannot be reversed.`}
+          confirmLabel="Delete Permanently"
           variant="danger"
+          onConfirm={handleDelete}
+        />
+
+        {/* Request Signature Modal (Finance Manager) */}
+        <RequestSignatureModal
+          isOpen={Boolean(requestSignTarget)}
+          invoice={requestSignTarget}
+          onClose={() => setRequestSignTarget(null)}
+          onSubmit={handleRequestSignature}
+          isSubmitting={isSubmittingWorkflow}
+        />
+
+        {/* QuestPDF & ClosedXML Document & Signature Modal */}
+        <InvoicePrintModal
+          isOpen={Boolean(printTarget)}
+          invoice={printTarget}
+          onClose={() => setPrintTarget(null)}
+          onSign={handleSignInvoice}
+          userRole={userRole}
+          userFullName={user?.fullName}
+          userName={user?.userName}
         />
       </PageShell>
     </AuthGuardAccess>

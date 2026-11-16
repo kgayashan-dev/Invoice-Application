@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Settings, Save, CheckCircle2 } from "lucide-react";
+import { Settings, Save, CheckCircle2, Image as ImageIcon, PenTool, Sliders } from "lucide-react";
 import DarkPageHeader from "@/components/DarkPageHeader";
 import PageShell from "@/components/layout/PageShell";
 import AppCard from "@/components/layout/AppCard";
@@ -13,6 +13,7 @@ import { useCurrency } from "@/Contexts/CurrencyContext";
 import { SUPPORTED_CURRENCIES } from "@/utils/currency";
 import { getApiBaseUrl } from "@/app/login/action";
 import { getAuthHeaders } from "@/utils/auth";
+import AssetManager from "@/components/settings/AssetManager";
 
 interface SystemSettingItem {
   id: number;
@@ -24,6 +25,7 @@ interface SystemSettingItem {
 
 export default function SettingsPage() {
   const { setCurrency } = useCurrency();
+  const [activeTab, setActiveTab] = useState<"system" | "logos" | "signatures">("system");
   const [settings, setSettings] = useState<SystemSettingItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -100,76 +102,138 @@ export default function SettingsPage() {
   return (
     <AuthGuardAccess requiredPermission={3001}>
       <PageShell>
-      <DarkPageHeader
-        icon={<Settings className="w-4 h-4 text-cyan-400" />}
-        breadcrumbs={["Home", "Administration", "Settings"]}
-        pageTitle="System Settings"
-        description="Global environment variables, billing thresholds, and security parameters"
-        onRefresh={fetchSettings}
-        isRefreshing={loading}
-      />
+        <DarkPageHeader
+          icon={<Settings className="w-4 h-4 text-cyan-400" />}
+          breadcrumbs={["Home", "Administration", "Settings"]}
+          pageTitle="System Settings & Assets"
+          description="Manage global parameters, currencies, banking information, and printable PDF assets"
+          onRefresh={fetchSettings}
+          isRefreshing={loading}
+        />
 
-      {message && (
-        <AppAlert
-          variant={message.type === "success" ? "success" : "error"}
-          onClose={() => setMessage(null)}
-        >
-          {message.text}
-        </AppAlert>
-      )}
-
-      <form onSubmit={handleSave} className="space-y-3">
-        {categories.map((cat) => (
-          <AppCard
-            key={cat}
-            title={`${cat} Configuration`}
-            subtitle={`Parameters governing ${cat.toLowerCase()} behavior`}
-          >
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-              {settings
-                .filter((s) => s.category === cat)
-                .map((s) => (
-                  <FormField
-                    key={s.id}
-                    label={s.settingKey.replace(/([A-Z])/g, " $1").trim()}
-                    hint={s.description}
-                  >
-                    {s.settingKey.toLowerCase() === "defaultcurrency" ? (
-                      <select
-                        value={s.settingValue.toUpperCase()}
-                        onChange={(e) => handleChange(s.id, e.target.value)}
-                        className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                      >
-                        {Object.values(SUPPORTED_CURRENCIES).map((c) => (
-                          <option key={c.code} value={c.code}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <TextInput
-                        value={s.settingValue}
-                        onChange={(e) => handleChange(s.id, e.target.value)}
-                      />
-                    )}
-                  </FormField>
-                ))}
-            </div>
-          </AppCard>
-        ))}
-
-        <div className="flex justify-end pt-2">
+        {/* Tab Navigation */}
+        <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-1 mb-6">
           <button
-            type="submit"
-            disabled={saving}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-60"
+            type="button"
+            onClick={() => setActiveTab("system")}
+            className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-lg border-b-2 transition-all ${
+              activeTab === "system"
+                ? "border-blue-600 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20"
+                : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300"
+            }`}
           >
-            <Save className="w-3.5 h-3.5" />
-            <span>{saving ? "Saving..." : "Save Configuration"}</span>
+            <Sliders className="w-4 h-4" />
+            System Parameters & Banking
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("logos")}
+            className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-lg border-b-2 transition-all ${
+              activeTab === "logos"
+                ? "border-blue-600 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20"
+                : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300"
+            }`}
+          >
+            <ImageIcon className="w-4 h-4" />
+            Company Logos
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("signatures")}
+            className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-lg border-b-2 transition-all ${
+              activeTab === "signatures"
+                ? "border-blue-600 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20"
+                : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300"
+            }`}
+          >
+            <PenTool className="w-4 h-4" />
+            Authorized Signatures
           </button>
         </div>
-      </form>
-    </PageShell>
+
+        {activeTab === "system" && (
+          <div className="space-y-4">
+            {message && (
+              <AppAlert
+                variant={message.type === "success" ? "success" : "error"}
+                onClose={() => setMessage(null)}
+              >
+                {message.text}
+              </AppAlert>
+            )}
+
+            <form onSubmit={handleSave} className="space-y-4">
+              {categories.map((cat) => (
+                <AppCard
+                  key={cat}
+                  title={`${cat} Configuration`}
+                  subtitle={`Parameters governing ${cat.toLowerCase()} settings and invoice outputs`}
+                >
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    {settings
+                      .filter((s) => s.category === cat)
+                      .map((s) => (
+                        <FormField
+                          key={s.id}
+                          label={s.settingKey.replace(/([A-Z])/g, " $1").trim()}
+                          hint={s.description}
+                        >
+                          {s.settingKey.toLowerCase() === "defaultcurrency" ? (
+                            <select
+                              value={s.settingValue.toUpperCase()}
+                              onChange={(e) => handleChange(s.id, e.target.value)}
+                              className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                            >
+                              {Object.values(SUPPORTED_CURRENCIES).map((c) => (
+                                <option key={c.code} value={c.code}>
+                                  {c.name}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <TextInput
+                              value={s.settingValue}
+                              onChange={(e) => handleChange(s.id, e.target.value)}
+                            />
+                          )}
+                        </FormField>
+                      ))}
+                  </div>
+                </AppCard>
+              ))}
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-60"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>{saving ? "Saving..." : "Save Configuration"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {activeTab === "logos" && (
+          <AssetManager
+            assetType="Logo"
+            title="Company Logo"
+            description="Upload official company logo graphics. The default logo will be placed in the top-right header of QuestPDF invoices."
+          />
+        )}
+
+        {activeTab === "signatures" && (
+          <AssetManager
+            assetType="Signature"
+            title="Authorized Signature"
+            description="Upload official signature PNG images with transparent backgrounds. Signatories can select their signature when generating or certifying QuestPDF invoices."
+          />
+        )}
+      </PageShell>
     </AuthGuardAccess>
   );
 }
