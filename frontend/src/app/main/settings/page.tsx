@@ -112,49 +112,49 @@ export default function SettingsPage() {
         />
 
         {/* Tab Navigation */}
-        <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-1 mb-6">
+        <div className="flex border-b border-slate-200 dark:border-slate-800 space-x-1 mb-3">
           <button
             type="button"
             onClick={() => setActiveTab("system")}
-            className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-lg border-b-2 transition-all ${
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-t-lg border-b-2 transition-all ${
               activeTab === "system"
                 ? "border-blue-600 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20"
                 : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300"
             }`}
           >
-            <Sliders className="w-4 h-4" />
+            <Sliders className="w-3.5 h-3.5" />
             System Parameters & Banking
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab("logos")}
-            className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-lg border-b-2 transition-all ${
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-t-lg border-b-2 transition-all ${
               activeTab === "logos"
                 ? "border-blue-600 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20"
                 : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300"
             }`}
           >
-            <ImageIcon className="w-4 h-4" />
+            <ImageIcon className="w-3.5 h-3.5" />
             Company Logos
           </button>
 
           <button
             type="button"
             onClick={() => setActiveTab("signatures")}
-            className={`inline-flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-t-lg border-b-2 transition-all ${
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-t-lg border-b-2 transition-all ${
               activeTab === "signatures"
                 ? "border-blue-600 text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-950/20"
                 : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-300"
             }`}
           >
-            <PenTool className="w-4 h-4" />
+            <PenTool className="w-3.5 h-3.5" />
             Authorized Signatures
           </button>
         </div>
 
         {activeTab === "system" && (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {message && (
               <AppAlert
                 variant={message.type === "success" ? "success" : "error"}
@@ -164,14 +164,14 @@ export default function SettingsPage() {
               </AppAlert>
             )}
 
-            <form onSubmit={handleSave} className="space-y-4">
+            <form onSubmit={handleSave} className="space-y-3">
               {categories.map((cat) => (
                 <AppCard
                   key={cat}
                   title={`${cat} Configuration`}
                   subtitle={`Parameters governing ${cat.toLowerCase()} settings and invoice outputs`}
                 >
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
                     {settings
                       .filter((s) => s.category === cat)
                       .map((s) => (
@@ -184,7 +184,7 @@ export default function SettingsPage() {
                             <select
                               value={s.settingValue.toUpperCase()}
                               onChange={(e) => handleChange(s.id, e.target.value)}
-                              className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 bg-white text-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                              className="w-full px-2.5 py-1.5 text-xs rounded border border-slate-300 bg-white text-slate-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                             >
                               {Object.values(SUPPORTED_CURRENCIES).map((c) => (
                                 <option key={c.code} value={c.code}>
@@ -204,11 +204,11 @@ export default function SettingsPage() {
                 </AppCard>
               ))}
 
-              <div className="flex justify-end pt-2">
+              <div className="flex justify-end pt-1">
                 <button
                   type="submit"
                   disabled={saving}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-60"
+                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold transition flex items-center gap-1 shadow-2xs cursor-pointer disabled:opacity-60"
                 >
                   <Save className="w-3.5 h-3.5" />
                   <span>{saving ? "Saving..." : "Save Configuration"}</span>
@@ -222,7 +222,7 @@ export default function SettingsPage() {
           <AssetManager
             assetType="Logo"
             title="Company Logo"
-            description="Upload official company logo graphics. The default logo will be placed in the top-right header of QuestPDF invoices."
+            description="Upload official company logo graphics. The default logo will be placed in the header of invoice PDFs."
           />
         )}
 
@@ -230,7 +230,7 @@ export default function SettingsPage() {
           <AssetManager
             assetType="Signature"
             title="Authorized Signature"
-            description="Upload official signature PNG images with transparent backgrounds. Signatories can select their signature when generating or certifying QuestPDF invoices."
+            description="Upload official signature PNG images with transparent backgrounds. Signatories can select their signature when generating or certifying invoice PDFs."
           />
         )}
       </PageShell>

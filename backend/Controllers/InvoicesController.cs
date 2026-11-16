@@ -186,7 +186,7 @@ public class InvoicesController : ControllerBase
         {
             new SqlParameter("@InvoiceNumber", SqlDbType.NVarChar, 50) { Value = invoice.InvoiceNumber },
             new SqlParameter("@CustomerName", SqlDbType.NVarChar, 200) { Value = invoice.CustomerName },
-            new SqlParameter("@CustomerEmail", SqlDbType.NVarChar, 200) { Value = (object?)invoice.CustomerEmail ?? DBNull.Value },
+            new SqlParameter("@CustomerEmail", SqlDbType.NVarChar, 200) { Value = (object?)invoice.CustomerEmail ?? "" },
             new SqlParameter("@CustomerAddress", SqlDbType.NVarChar, 500) { Value = (object?)invoice.CustomerAddress ?? DBNull.Value },
             new SqlParameter("@Attention", SqlDbType.NVarChar, 200) { Value = (object?)invoice.Attention ?? DBNull.Value },
             new SqlParameter("@CustomerId", SqlDbType.NVarChar, 50) { Value = (object?)invoice.CustomerId ?? DBNull.Value },

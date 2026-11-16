@@ -346,7 +346,7 @@ export default function InvoicesPage() {
           icon={<Receipt className="w-4 h-4 text-cyan-400" />}
           breadcrumbs={["Home", "Billing", "Invoices"]}
           pageTitle="Invoice Registry"
-          description={`Customer invoices ledger with QuestPDF A4 export & ClosedXML Excel reporting (${currencyPrefix.trim()})`}
+          description={`Customer invoices ledger with PDF export & Excel reporting (${currencyPrefix.trim()})`}
           onRefresh={fetchInvoices}
           isRefreshing={loading}
           actions={
@@ -355,17 +355,17 @@ export default function InvoicesPage() {
                 type="button"
                 onClick={handleExportAllReport}
                 disabled={isExportingAll || invoices.length === 0}
-                className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-md text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-600 text-white rounded text-xs font-semibold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
                 title="Export complete particulars report across all invoices to Excel"
               >
                 <FileSpreadsheet className="w-3.5 h-3.5" />
-                <span>{isExportingAll ? "Exporting..." : "Export Report (Excel)"}</span>
+                <span>{isExportingAll ? "Exporting..." : "Export Excel"}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setIsModalOpen(true)}
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-semibold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Create Invoice</span>
@@ -390,7 +390,7 @@ export default function InvoicesPage() {
           count={filteredInvoices.length}
           countLabel="invoices"
           filters={
-            <div className="flex items-center gap-1.5 flex-wrap">
+            <div className="flex items-center gap-1 flex-wrap">
               {[
                 "ALL",
                 "AWAITING SIGNATURE",
@@ -402,7 +402,7 @@ export default function InvoicesPage() {
                 <button
                   key={st}
                   onClick={() => setStatusFilter(st)}
-                  className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors ${
+                  className={`px-2 py-0.5 text-[11px] font-semibold rounded transition-colors ${
                     statusFilter === st
                       ? "bg-blue-600 text-white shadow-2xs"
                       : "bg-white text-slate-600 hover:bg-slate-50 border border-slate-200"
