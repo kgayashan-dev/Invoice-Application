@@ -49,6 +49,8 @@ using (var scope = app.Services.CreateScope())
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         logger.LogInformation("Applying database migrations...");
         db.Database.Migrate();
+        logger.LogInformation("Seeding default administration data...");
+        db.SeedDefaults();
         logger.LogInformation("Database ready.");
     }
     catch (Exception ex)
